@@ -29,15 +29,12 @@ ws_reference = wb.create_sheet("Справочники")
 ws_summary = wb.create_sheet("Сводка")
 ws_capa = wb.create_sheet("CAPA")
 
-tonality_list = ["Позитив", "Негатив", "Смешанный"]
+tonality_list = ["Позитив", "Негатив", "Смешанный", "Не применимо"]
 review_tag_list = [
     "Кухня",
     "Бар",
     "Сервис",
-    "Доставка",
     "Зал",
-    "Праздник",
-    "Маркетинг",
     "Другое",
 ]
 type_list = [
@@ -390,7 +387,7 @@ dish_table.tableStyleInfo = dish_table_style
 ws_dishes.add_table(dish_table)
 
 dv_dish_tonality = DataValidation(
-    type="list", formula1="=Справочники!$A$2:$A$4", allow_blank=True
+    type="list", formula1="=Справочники!$A$2:$A$5", allow_blank=True
 )
 dv_dish_priority = DataValidation(
     type="list", formula1="=Справочники!$C$2:$C$5", allow_blank=True
@@ -414,7 +411,7 @@ dv_dish_priority.add("I2:I5000")
 dv_dish_problem.add("J2:J5000")
 dv_dish_tag.add("F2:F5000")
 
-for rng in ["A2:G5000", "I2:K5000"]:
+for rng in ["A2:H5000", "J2:K5000"]:
     ws_dishes.conditional_formatting.add(
         rng, FormulaRule(formula=['$H2="Негатив"'], fill=negative_fill)
     )
@@ -423,6 +420,9 @@ for rng in ["A2:G5000", "I2:K5000"]:
     )
     ws_dishes.conditional_formatting.add(
         rng, FormulaRule(formula=['$H2="Позитив"'], fill=positive_fill)
+    )
+    ws_dishes.conditional_formatting.add(
+        rng, FormulaRule(formula=['$H2="Не применимо"'], fill=positive_fill)
     )
 
 ws_dishes.conditional_formatting.add(

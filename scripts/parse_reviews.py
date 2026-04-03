@@ -695,8 +695,7 @@ def classify_tonality_by_text(text: str) -> str:
         "все супер",
         "все отлично",
         "всё отлично",
-        "всё ок"
-        "волшеб"
+        "всё ок" "волшеб",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_positive_patterns):
         return "Позитив"
@@ -1107,7 +1106,7 @@ def detect_dishes(text: str) -> List[Dict[str, str]]:
 
 def detect_review_tag(text: str, detected_dishes: List[Dict[str, str]]) -> str:
     if detected_dishes:
-        priority_order = ["Кухня", "Напитки", "Десерт", "Завтрак", "Детское", "Добавка"]
+        priority_order = ["Кухня", "Бар", "Десерты", "Детское"]
         dish_tags = [
             item["dish_tag"] for item in detected_dishes if item.get("dish_tag")
         ]
