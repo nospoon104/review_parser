@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local temp files
+*.tmp
+*.swp
+
+# Excel temporary files
+~$*.xlsx
+
+# Build / cache
+.pytest_cache/
+.mypy_cache/
+
+# Output data
+ГОТОВЫЙ_РЕЗУЛЬТАТ/
+output/
+results/
+
+# Input raw files with real data
+raw_reviews.txt
+input/raw_reviews.txt
+
+# Generated templates if you don't want versioning
+ШАБЛОН_НЕ_ТРОГАТЬ/
