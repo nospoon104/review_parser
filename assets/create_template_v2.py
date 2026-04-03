@@ -431,6 +431,12 @@ ws_dishes.conditional_formatting.add(
 ws_dishes.conditional_formatting.add(
     "I2:I5000", FormulaRule(formula=['$I2="Критический"'], fill=priority_critical_fill)
 )
+ws_dishes.conditional_formatting.add(
+    "I2:I5000", FormulaRule(formula=['$I2="Низкий"'], fill=positive_fill)
+)
+ws_dishes.conditional_formatting.add(
+    "I2:I5000", FormulaRule(formula=['$I2="Средний"'], fill=mixed_fill)
+)
 
 
 # Лист CAPA
