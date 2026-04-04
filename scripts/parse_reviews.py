@@ -108,6 +108,9 @@ POSITIVE_MARKERS = [
     "хорошая",
     "хорошее",
     "хорошие",
+    "лучше чем обычно",
+    "хорошо",
+    "превосходно" "потрясающе",
 ]
 
 NEGATIVE_MARKERS = [
@@ -157,6 +160,11 @@ NEGATIVE_MARKERS = [
     "сухое",
     "жесткий",
     "жёсткий",
+    "жёсткая",
+    "жесткая",
+    "водянистый",
+    "водянистая",
+    "водянситое",
     "жестковато",
     "жёстковато",
     "резиновый",
@@ -256,6 +264,9 @@ NEGATIVE_MARKERS = [
     "осколок",
     "пластик",
     "кусок упаковки",
+    "хромает",
+    "никакой",
+    "ни о чём",
 ]
 
 MIXED_MARKERS = [
@@ -282,6 +293,11 @@ MIXED_MARKERS = [
     "лишнее",
     "лишний",
     "лишняя",
+    "странный",
+    "странное",
+    "странная",
+    "привкус",
+    "странное сочетание" "странные сочетания",
 ]
 
 SERVICE_RECOVERY_MARKERS = [
@@ -562,7 +578,7 @@ def split_messages(text: str) -> List[str]:
 
     lines = text.splitlines()
 
-    old_header_pattern = re.compile(r"^\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:\s*$")
+    old_header_pattern = re.compile(r"^\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:.*$")
     new_header_pattern = re.compile(
         r"^.+?, \[\d{1,2} [А-Яа-яЁё.]+ \d{4} в \d{2}:\d{2}\]\s*$"
     )
@@ -818,93 +834,132 @@ def classify_tonality_by_text(text: str) -> str:
     )
 
     strong_negative_markers = [
-        "не доставили",
-        "не доложили",
-        "не привезли",
-        "нет части заказа",
-        "сырой",
-        "сырая",
-        "сырое",
-        "сырые",
-        "есть невозможно",
-        "есть не возможно",
-        "невозможно есть",
-        "убрали из счета",
-        "убрали из счёта",
-        "отравление",
-        "отравились",
-        "стола нет",
-        "нет стола",
-        "не готово",
         "не забронировано",
-        "не понравилось",
+        "пресно",
+        "холодный",
+        "отравление",
+        "не работает",
+        "отравились",
+        "мутный",
+        "испорчено",
+        "испорчен",
+        "кислая",
+        "не съедобно",
+        "сырая",
+        "жесткий",
+        "не зашёл",
+        "не вкусные",
+        "есть не возможно",
+        "безвкусно",
+        "кислый",
+        "очень долго",
+        "сырые",
+        "жестковато",
+        "нагрубили",
         "плохо",
+        "не приняли",
+        "холодные",
+        "не доставили",
+        "испорчена",
+        "не вкусно",
+        "обслуживали долго",
+        "сырое",
+        "мутное",
+        "сырой",
+        "невкусная",
+        "ужасно",
+        "жёсткий",
+        "не понравился",
+        "долго",
+        "остывший",
         "очень плохо",
+        "есть невозможно",
+        "горчит",
+        "холодная",
+        "кошмар",
+        "не зашел",
+        "убрали из счета",
+        "холодное",
+        "отвратительно",
+        "не вкусное",
+        "ждали час",
+        "сухое",
+        "стола нет",
+        "хамили",
+        "не готово",
         "грязно",
         "не принесли",
-        "забыли",
-        "не вкусно",
-        "невкусно",
         "не вкусный",
-        "не вкусная",
-        "не вкусное",
-        "не вкусные",
-        "невкусный",
-        "невкусная",
-        "невкусное",
         "невкусные",
-        "не съедобно",
-        "не работает",
-        "не приняли",
+        "не привезли",
+        "не понравилось",
+        "остывшее",
+        "убрали из счёта",
+        "нет стола",
+        "невозможно есть",
         "мутная",
-        "мутный",
-        "мутное",
+        "невкусно",
         "мутные",
-        "долго",
+        "не зашло",
+        "жёстковато",
+        "забыли",
+        "сухая",
+        "нет части заказа",
         "долго ждали",
-        "очень долго",
-        "ждали час",
-        "обслуживали долго",
-        "хамили",
-        "нагрубили",
-        "ужасно",
-        "отвратительно",
-        "кошмар",
-        "хуже",
-        "испорчен",
-        "испорчено",
-        "испорчена",
-        "холодный",
-        "холодная",
-        "холодное",
-        "остывший",
+        "невкусный",
+        "пресновато",
+        "не понравилась",
+        "не понравились",
+        "кислое",
+        "невкусное",
+        "сухой",
         "остыла",
+        "суховато",
+        "хуже",
+        "не вкусная",
+        "не доложили",
+        "пересолили",
+        "пересолено",
+        "пересол",
+        "пересолен",
+        "пересолена",
+        "недовольны",
+        "недоволен",
+        "не принял заказ",
+        "не приняли заказ",
+        "не приняла заказ" "не принял",
     ]
-
-    has_strong_negative = any(
-        phrase_in_text(text_lower, marker) for marker in strong_negative_markers
-    )
-
-    if pos_score > 0 and neg_score > 0 and has_mixed:
-        return "Смешанный"
 
     strong_negative_count = sum(
         1 for marker in strong_negative_markers if phrase_in_text(text_lower, marker)
     )
+    has_strong_negative = strong_negative_count > 0
 
+    # Явно смешанный случай
+    if pos_score > 0 and neg_score > 0 and has_mixed:
+        if strong_negative_count >= 1 and neg_score >= pos_score:
+            return "Негатив"
+        return "Смешанный"
+
+    # Есть и позитив, и негатив
     if pos_score > 0 and neg_score > 0:
         if strong_negative_count >= 2:
+            return "Негатив"
+        if has_strong_negative and neg_score >= pos_score:
             return "Негатив"
         if has_strong_negative and pos_score <= 1:
             return "Негатив"
         return "Смешанный"
 
+    # Только негатив
     if neg_score > 0 and pos_score == 0:
         return "Негатив"
 
+    # Только позитив
     if pos_score > 0 and neg_score == 0:
         return "Позитив"
 
+    # Был негатив, но его попытались компенсировать
     if has_recovery and neg_score > 0:
         return "Негатив"
 
@@ -922,6 +977,13 @@ def classify_tonality_by_text(text: str) -> str:
         "всё отлично",
         "всё ок",
         "волшеб",
+        "понравился",
+        "понравилась",
+        "понравились",
+        "вкусный",
+        "вкусная",
+        "вкусное",
+        "вкусные",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_positive_patterns):
         return "Позитив"
@@ -934,6 +996,14 @@ def classify_tonality_by_text(text: str) -> str:
         "больше не придём",
         "больше не вернемся",
         "больше не вернёмся",
+        "не зашло",
+        "не зашел",
+        "не зашёл",
+        "не понравился",
+        "не понравилась",
+        "не понравились",
+        "суховато",
+        "пресновато",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_negative_patterns):
         return "Негатив"
@@ -1026,6 +1096,27 @@ def extract_problem(text: str) -> str:
             ],
         ),
         (
+            "Блюдо холодное / остывшее",
+            [
+                "холодный",
+                "холодная",
+                "холодное",
+                "холодные",
+                "остывший",
+                "остыла",
+                "остывшее",
+                "остыло",
+                "прохладный",
+                "прохладная",
+                "прохладное",
+                "еле тёплый",
+                "еле теплый",
+                "еле тёплая",
+                "еле тёплое",
+                "еле теплое",
+            ],
+        ),
+        (
             "Долгое обслуживание",
             [
                 "долго",
@@ -1105,12 +1196,31 @@ def extract_problem(text: str) -> str:
     return "; ".join(unique)
 
 
-def detect_type_and_priority(text: str) -> Tuple[str, str]:
-    text_lower = normalize_text_for_search(text)
+def detect_type_and_priority(text: str, review_tag: str = "") -> Tuple[str, str]:
+    text_lower = normalize_text_for_search(text).strip()
+
+    if not text_lower:
+        if review_tag == "Кухня":
+            return "Кухня / Кухня", "Низкий"
+        if review_tag == "Бар":
+            return "Бар / Напитки", "Низкий"
+        if review_tag == "Десерты":
+            return "Кухня / Десерты", "Низкий"
+        if review_tag == "Детское":
+            return "Кухня / Детское", "Низкий"
+        return "Сервис / Обслуживание", "Низкий"
 
     if has_negative_exception(text_lower):
         tonality = classify_tonality_by_text(text)
         if tonality == "Позитив":
+            if review_tag == "Кухня":
+                return "Кухня / Кухня", "Низкий"
+            if review_tag == "Бар":
+                return "Бар / Напитки", "Низкий"
+            if review_tag == "Десерты":
+                return "Кухня / Десерты", "Низкий"
+            if review_tag == "Детское":
+                return "Кухня / Детское", "Низкий"
             return "Сервис / Обслуживание", "Низкий"
 
     rules = [
@@ -1129,7 +1239,11 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
         {
             "type": "Доставка / Приборы",
             "priority": "Высокий",
-            "patterns": ["ни единой салфетки", "без приборов", "без салфеток"],
+            "patterns": [
+                "ни единой салфетки",
+                "без приборов",
+                "без салфеток",
+            ],
         },
         {
             "type": "Кухня / Кухня",
@@ -1138,6 +1252,7 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "сырой",
                 "сырая",
                 "сырое",
+                "сырые",
                 "не вкусно",
                 "невкусно",
                 "вообще не вкус",
@@ -1152,17 +1267,24 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "передержали",
                 "хрустят",
                 "жестковато",
+                "жёстковато",
                 "жесткий",
                 "жёсткий",
                 "резиновый",
+                "резиновая",
+                "резиновое",
                 "сухой",
                 "сухая",
                 "сухое",
+                "суховато",
                 "горчит",
                 "кислый",
+                "кислая",
+                "кислое",
                 "холодный",
                 "холодная",
                 "холодное",
+                "холодные",
                 "кухня",
                 "со стороны кухни",
                 "забыли положить",
@@ -1175,9 +1297,25 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "остыла",
                 "остыл",
                 "остыло",
+                "остывшее",
                 "еле тёплый",
+                "еле теплый",
                 "еле теплое",
                 "еле тёплая",
+                "не понравился",
+                "не понравилась",
+                "не понравились",
+                "не зашло",
+                "не зашел",
+                "не зашёл",
+                "безвкусно",
+                "пресно",
+                "пресновато",
+                "пересолили",
+                "пересолено",
+                "пересол",
+                "пересолен",
+                "пересолена",
             ],
         },
         {
@@ -1195,18 +1333,6 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "забыли",
                 "не принесли",
                 "не вынесли",
-                "сухой",
-                "деревянный",
-                "просрочен",
-                "просрочено",
-                "просроченный",
-                "просрок",
-                "засох",
-                "засохший",
-                "старый",
-                "не свежий",
-                "не свежее",
-                "не свежая",
             ],
         },
         {
@@ -1244,13 +1370,16 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "в подвале",
                 "организацией мероприятия",
                 "не забронировано",
+                "не готово",
+                "стола нет",
+                "нет стола",
             ],
         },
     ]
 
     matched = []
     for rule in rules:
-        if any(pattern in text_lower for pattern in rule["patterns"]):
+        if any(phrase_in_text(text_lower, pattern) for pattern in rule["patterns"]):
             matched.append(rule)
 
     if matched:
@@ -1268,14 +1397,35 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
         return best["type"], best["priority"]
 
     tonality = classify_tonality_by_text(text)
+
+    if review_tag == "Кухня":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Кухня / Кухня", "Средний"
+        return "Кухня / Кухня", "Низкий"
+
+    if review_tag == "Бар":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Бар / Напитки", "Средний"
+        return "Бар / Напитки", "Низкий"
+
+    if review_tag == "Десерты":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Кухня / Десерты", "Средний"
+        return "Кухня / Десерты", "Низкий"
+
+    if review_tag == "Детское":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Кухня / Детское", "Средний"
+        return "Кухня / Детское", "Низкий"
+
     if tonality == "Негатив":
         return "Сервис / Обслуживание", "Средний"
     if tonality == "Смешанный":
         return "Сервис / Обслуживание", "Средний"
     if tonality == "Позитив":
-        return "Зал / Атмосфера", "Низкий"
+        return "Сервис / Обслуживание", "Низкий"
 
-    return "Зал / Атмосфера", "Низкий"
+    return "Сервис / Обслуживание", "Низкий"
 
 
 def fallback_dish_tag_by_name(dish_name: str) -> str:
@@ -1605,14 +1755,14 @@ def parse_aggregator_body(
     tags = extract_tags(body)
 
     tonality = ensure_tonality(review_text, rating)
-    review_type, priority = detect_type_and_priority(review_text)
+    detected_dishes = detect_dishes(review_text)
+    review_tag = detect_review_tag(review_text, detected_dishes)
+    review_type, priority = detect_type_and_priority(review_text, review_tag)
     if not priority:
         priority = "Средний" if tonality in ["Негатив", "Смешанный"] else "Низкий"
 
     problem = extract_problem(review_text)
     what_done = extract_what_done(review_text)
-    detected_dishes = detect_dishes(review_text)
-    review_tag = detect_review_tag(review_text, detected_dishes)
     detected_dishes_str = ", ".join(item["dish"] for item in detected_dishes)
 
     row = {
@@ -1651,17 +1801,17 @@ def parse_chat_body(
         is_noise = detect_noise(review_text)
 
         tonality = "" if is_noise else ensure_tonality(review_text)
+        problem = "" if is_noise else extract_problem(review_text)
+        what_done = "" if is_noise else extract_what_done(review_text)
+        detected_dishes = [] if is_noise else detect_dishes(review_text)
+        review_tag = "" if is_noise else detect_review_tag(review_text, detected_dishes)
         review_type, priority = (
-            ("", "") if is_noise else detect_type_and_priority(review_text)
+            ("", "") if is_noise else detect_type_and_priority(review_text, review_tag)
         )
 
         if not is_noise and not priority:
             priority = "Средний" if tonality in ["Негатив", "Смешанный"] else "Низкий"
 
-        problem = "" if is_noise else extract_problem(review_text)
-        what_done = "" if is_noise else extract_what_done(review_text)
-        detected_dishes = [] if is_noise else detect_dishes(review_text)
-        review_tag = "" if is_noise else detect_review_tag(review_text, detected_dishes)
         detected_dishes_str = ", ".join(item["dish"] for item in detected_dishes)
 
         row = {
