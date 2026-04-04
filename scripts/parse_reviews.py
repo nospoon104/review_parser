@@ -452,6 +452,64 @@ SHORT_REPLIES = {
     "ок, спасибо",
 }
 
+MONTH_MAP = {
+    "янв": "01",
+    "янв.": "01",
+    "фев": "02",
+    "февр": "02",
+    "февр.": "02",
+    "мар": "03",
+    "мар.": "03",
+    "апр": "04",
+    "апр.": "04",
+    "мая": "05",
+    "май": "05",
+    "июн": "06",
+    "июн.": "06",
+    "июл": "07",
+    "июл.": "07",
+    "авг": "08",
+    "авг.": "08",
+    "сен": "09",
+    "сен.": "09",
+    "сент": "09",
+    "сент.": "09",
+    "окт": "10",
+    "окт.": "10",
+    "ноя": "11",
+    "нояб": "11",
+    "нояб.": "11",
+    "дек": "12",
+    "дек.": "12",
+}
+
+
+def normalize_telegram_date(date_str: str) -> str:
+    """
+    Преобразует дату вида '4 апр. 2026' в '04.04.2026'.
+    Если не удалось распарсить, возвращает исходную строку без лишних пробелов.
+    """
+    if not date_str:
+        return ""
+
+    cleaned = normalize_spaces(date_str).strip().lower()
+    match = re.match(r"^(\d{1,2})\s+([а-яё.]+)\s+(\d{4})$", cleaned, re.IGNORECASE)
+    if not match:
+        return normalize_spaces(date_str).strip()
+
+    day, month_raw, year = match.groups()
+    month_key = month_raw.lower().strip()
+    month_num = MONTH_MAP.get(month_key)
+
+    if not month_num:
+        month_key = month_key.rstrip(".")
+        month_num = MONTH_MAP.get(month_key)
+
+    if not month_num:
+        return normalize_spaces(date_str).strip()
+
+    return f"{int(day):02d}.{month_num}.{year}"
+
 
 def normalize_spaces(text: str) -> str:
     text = text.replace("\xa0", " ")
@@ -494,70 +552,183 @@ def phrase_in_text(text: str, phrase: str) -> bool:
 
 
 def split_messages(text: str) -> List[str]:
-    pattern = r"(?=\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:)"
-    parts = re.split(pattern, text)
-    return [part.strip() for part in parts if part.strip()]
+
+    # Поддерживает 2 формата заголовка:
+    # 1) [04.04.2026 12:30] Имя:
+    # 2) Alex, [4 апр. 2026 в 15:39]
+
+    if not text or not text.strip():
+        return []
+
+    lines = text.splitlines()
+
+    old_header_pattern = re.compile(r"^\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:\s*$")
+    new_header_pattern = re.compile(
+        r"^.+?, \[\d{1,2} [А-Яа-яЁё.]+ \d{4} в \d{2}:\d{2}\]\s*$"
+    )
+
+    blocks = []
+    current_block = []
+
+    def is_header_line(line: str) -> bool:
+        stripped = line.strip()
+        return bool(
+            old_header_pattern.match(stripped) or new_header_pattern.match(stripped)
+        )
+
+    for line in lines:
+        if is_header_line(line):
+            if current_block:
+                block = "\n".join(current_block).strip()
+                if block:
+                    blocks.append(block)
+            current_block = [line]
+        else:
+            current_block.append(line)
+
+    if current_block:
+        block = "\n".join(current_block).strip()
+        if block:
+            blocks.append(block)
+
+    return blocks
 
 
 def parse_message_block(block: str) -> Optional[Dict[str, str]]:
-    header_pattern = r"^\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\] (.+?):\s*(.*)$"
-    match = re.match(header_pattern, block, re.DOTALL)
-    if not match:
+    if not block or not block.strip():
         return None
 
-    message_datetime = match.group(1).strip()
-    author = match.group(2).strip()
-    body = match.group(3).strip()
-    review_date = message_datetime.split()[0]
+    block = block.strip()
 
-    return {
-        "message_datetime": message_datetime,
-        "review_date": review_date,
-        "author": author,
-        "body": body,
-        "raw_block": block.strip(),
-    }
+    # Формат 1:
+    # [04.04.2026 12:30] Имя: текст
+    old_header_pattern = re.compile(
+        r"^\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\] (.+?):\s*(.*)$",
+        re.DOTALL,
+    )
+    old_match = old_header_pattern.match(block)
+    if old_match:
+        message_datetime = old_match.group(1).strip()
+        author = old_match.group(2).strip()
+        body = old_match.group(3).strip()
+        review_date = message_datetime.split()[0]
+
+        return {
+            "message_datetime": message_datetime,
+            "review_date": review_date,
+            "author": author,
+            "body": body,
+            "raw_block": block,
+        }
+
+    # Формат 2:
+    # Alex, [4 апр. 2026 в 15:39]
+    # 223
+    # Мамин завтрак понравился
+    new_header_pattern = re.compile(
+        r"^(.+?), \[(\d{1,2} [А-Яа-яЁё.]+ \d{4}) в (\d{2}:\d{2})\]\s*(.*)$",
+        re.DOTALL,
+    )
+    new_match = new_header_pattern.match(block)
+    if new_match:
+        author = new_match.group(1).strip()
+        raw_date = new_match.group(2).strip()  # 4 апр. 2026
+        time_part = new_match.group(3).strip()  # 15:39
+        body = new_match.group(4).strip()
+
+        review_date = normalize_telegram_date(raw_date)
+        message_datetime = f"{review_date} {time_part}" if review_date else time_part
+
+        return {
+            "message_datetime": message_datetime,
+            "review_date": review_date,
+            "author": author,
+            "body": body,
+            "raw_block": block,
+        }
+
+    return None
 
 
 def split_chat_into_subreviews(body: str) -> List[str]:
-    body = normalize_spaces(body)
-    body = body.replace("\n", " ")
+    body = body.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not body:
+        return []
 
-    pattern = re.compile(
-        r"(?=(?:^|\s)(?:Стол\s*\d{2,4}\b|\d{2,4}\s*стол\b|\d{2,4}\s*,))",
+    lines = body.split("\n")
+
+    blocks = []
+    current_block = []
+
+    table_only_pattern = re.compile(r"^\s*\d{2,4}\s*$")
+    table_with_text_pattern = re.compile(r"^\s*\d{2,4}\b")
+    explicit_table_pattern = re.compile(
+        r"^\s*(?:Стол\s*\d{2,4}\b|\d{2,4}\s*стол\b|\d{2,4}\s*,)",
         re.IGNORECASE,
     )
 
-    matches = list(pattern.finditer(body))
-    if not matches:
-        return [body.strip()]
+    def starts_new_subreview(line: str) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
 
-    chunks = []
-    for i, match in enumerate(matches):
-        start = match.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
-        chunk = body[start:end].strip(" ,")
-        if chunk:
-            chunks.append(chunk)
+        return bool(
+            table_only_pattern.match(stripped)
+            or explicit_table_pattern.match(stripped)
+            or table_with_text_pattern.match(stripped)
+        )
 
-    prefix = body[: matches[0].start()].strip(" ,")
-    if prefix and chunks:
-        chunks[0] = f"{prefix} {chunks[0]}".strip()
+    for line in lines:
+        if starts_new_subreview(line):
+            if current_block:
+                block = "\n".join(current_block).strip()
+                if block:
+                    blocks.append(block)
+            current_block = [line]
+        else:
+            if current_block:
+                current_block.append(line)
+            else:
+                current_block = [line]
 
-    return chunks if chunks else [body.strip()]
+    if current_block:
+        block = "\n".join(current_block).strip()
+        if block:
+            blocks.append(block)
+
+    return blocks
 
 
 def extract_table_number(text: str) -> str:
+    if not text or not text.strip():
+        return ""
+
+    text = text.strip()
+
+    # 1. Первая непустая строка целиком состоит из номера стола
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines:
+        first_line = lines[0]
+        if re.fullmatch(r"\d{2,4}", first_line):
+            return first_line
+
+        match = re.match(r"^(\d{2,4})\b", first_line)
+        if match:
+            return match.group(1)
+
+    # 2. Явные форматы "Стол 223" / "223 стол"
     patterns = [
         r"\bСтол\s*(\d{2,4})\b",
         r"\bстол\s*(\d{2,4})\b",
         r"\b(\d{2,4})\s*стол\b",
         r"^\s*(\d{2,4})[,\s.]",
     ]
+
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
             return match.group(1)
+
     return ""
 
 
@@ -1006,7 +1177,7 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "остыло",
                 "еле тёплый",
                 "еле теплое",
-                "еле тёплая"
+                "еле тёплая",
             ],
         },
         {
@@ -1035,7 +1206,7 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "старый",
                 "не свежий",
                 "не свежее",
-                "не свежая"
+                "не свежая",
             ],
         },
         {
@@ -1469,6 +1640,8 @@ def parse_chat_body(
     body: str,
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
     subreviews = split_chat_into_subreviews(body)
+    if not subreviews:
+        subreviews = [body]
     review_rows = []
     dish_rows = []
 
