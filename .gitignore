@@ -39,5 +39,12 @@ results/
 raw_reviews.txt
 input/raw_reviews.txt
 
-# Generated templates if you don't want versioning
+# Generated templates 
 ШАБЛОН_НЕ_ТРОГАТЬ/
+
+#debug_files
+manual.txt
+restructured_dish_aliases.txt
+scripts/catalogs_debug.py
+scripts/parse_reviews_debug.py
+отзывы_README.docx

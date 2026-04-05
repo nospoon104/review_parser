@@ -108,6 +108,9 @@ POSITIVE_MARKERS = [
     "хорошая",
     "хорошее",
     "хорошие",
+    "лучше чем обычно",
+    "хорошо",
+    "превосходно" "потрясающе",
 ]
 
 NEGATIVE_MARKERS = [
@@ -157,6 +160,11 @@ NEGATIVE_MARKERS = [
     "сухое",
     "жесткий",
     "жёсткий",
+    "жёсткая",
+    "жесткая",
+    "водянистый",
+    "водянистая",
+    "водянситое",
     "жестковато",
     "жёстковато",
     "резиновый",
@@ -254,6 +262,11 @@ NEGATIVE_MARKERS = [
     "волос",
     "стекло",
     "осколок",
+    "пластик",
+    "кусок упаковки",
+    "хромает",
+    "никакой",
+    "ни о чём",
 ]
 
 MIXED_MARKERS = [
@@ -277,6 +290,14 @@ MIXED_MARKERS = [
     "понравилось, но",
     "в целом хорошо, но",
     "неплохо, но",
+    "лишнее",
+    "лишний",
+    "лишняя",
+    "странный",
+    "странное",
+    "странная",
+    "привкус",
+    "странное сочетание" "странные сочетания",
 ]
 
 SERVICE_RECOVERY_MARKERS = [
@@ -447,6 +468,64 @@ SHORT_REPLIES = {
     "ок, спасибо",
 }
 
+MONTH_MAP = {
+    "янв": "01",
+    "янв.": "01",
+    "фев": "02",
+    "февр": "02",
+    "февр.": "02",
+    "мар": "03",
+    "мар.": "03",
+    "апр": "04",
+    "апр.": "04",
+    "мая": "05",
+    "май": "05",
+    "июн": "06",
+    "июн.": "06",
+    "июл": "07",
+    "июл.": "07",
+    "авг": "08",
+    "авг.": "08",
+    "сен": "09",
+    "сен.": "09",
+    "сент": "09",
+    "сент.": "09",
+    "окт": "10",
+    "окт.": "10",
+    "ноя": "11",
+    "нояб": "11",
+    "нояб.": "11",
+    "дек": "12",
+    "дек.": "12",
+}
+
+
+def normalize_telegram_date(date_str: str) -> str:
+    """
+    Преобразует дату вида '4 апр. 2026' в '04.04.2026'.
+    Если не удалось распарсить, возвращает исходную строку без лишних пробелов.
+    """
+    if not date_str:
+        return ""
+
+    cleaned = normalize_spaces(date_str).strip().lower()
+    match = re.match(r"^(\d{1,2})\s+([а-яё.]+)\s+(\d{4})$", cleaned, re.IGNORECASE)
+    if not match:
+        return normalize_spaces(date_str).strip()
+
+    day, month_raw, year = match.groups()
+    month_key = month_raw.lower().strip()
+    month_num = MONTH_MAP.get(month_key)
+
+    if not month_num:
+        month_key = month_key.rstrip(".")
+        month_num = MONTH_MAP.get(month_key)
+
+    if not month_num:
+        return normalize_spaces(date_str).strip()
+
+    return f"{int(day):02d}.{month_num}.{year}"
+
 
 def normalize_spaces(text: str) -> str:
     text = text.replace("\xa0", " ")
@@ -489,70 +568,183 @@ def phrase_in_text(text: str, phrase: str) -> bool:
 
 
 def split_messages(text: str) -> List[str]:
-    pattern = r"(?=\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:)"
-    parts = re.split(pattern, text)
-    return [part.strip() for part in parts if part.strip()]
+
+    # Поддерживает 2 формата заголовка:
+    # 1) [04.04.2026 12:30] Имя:
+    # 2) Alex, [4 апр. 2026 в 15:39]
+
+    if not text or not text.strip():
+        return []
+
+    lines = text.splitlines()
+
+    old_header_pattern = re.compile(r"^\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:.*$")
+    new_header_pattern = re.compile(
+        r"^.+?, \[\d{1,2} [А-Яа-яЁё.]+ \d{4} в \d{2}:\d{2}\]\s*$"
+    )
+
+    blocks = []
+    current_block = []
+
+    def is_header_line(line: str) -> bool:
+        stripped = line.strip()
+        return bool(
+            old_header_pattern.match(stripped) or new_header_pattern.match(stripped)
+        )
+
+    for line in lines:
+        if is_header_line(line):
+            if current_block:
+                block = "\n".join(current_block).strip()
+                if block:
+                    blocks.append(block)
+            current_block = [line]
+        else:
+            current_block.append(line)
+
+    if current_block:
+        block = "\n".join(current_block).strip()
+        if block:
+            blocks.append(block)
+
+    return blocks
 
 
 def parse_message_block(block: str) -> Optional[Dict[str, str]]:
-    header_pattern = r"^\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\] (.+?):\s*(.*)$"
-    match = re.match(header_pattern, block, re.DOTALL)
-    if not match:
+    if not block or not block.strip():
         return None
 
-    message_datetime = match.group(1).strip()
-    author = match.group(2).strip()
-    body = match.group(3).strip()
-    review_date = message_datetime.split()[0]
+    block = block.strip()
 
-    return {
-        "message_datetime": message_datetime,
-        "review_date": review_date,
-        "author": author,
-        "body": body,
-        "raw_block": block.strip(),
-    }
+    # Формат 1:
+    # [04.04.2026 12:30] Имя: текст
+    old_header_pattern = re.compile(
+        r"^\[(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})\] (.+?):\s*(.*)$",
+        re.DOTALL,
+    )
+    old_match = old_header_pattern.match(block)
+    if old_match:
+        message_datetime = old_match.group(1).strip()
+        author = old_match.group(2).strip()
+        body = old_match.group(3).strip()
+        review_date = message_datetime.split()[0]
+
+        return {
+            "message_datetime": message_datetime,
+            "review_date": review_date,
+            "author": author,
+            "body": body,
+            "raw_block": block,
+        }
+
+    # Формат 2:
+    # Alex, [4 апр. 2026 в 15:39]
+    # 223
+    # Мамин завтрак понравился
+    new_header_pattern = re.compile(
+        r"^(.+?), \[(\d{1,2} [А-Яа-яЁё.]+ \d{4}) в (\d{2}:\d{2})\]\s*(.*)$",
+        re.DOTALL,
+    )
+    new_match = new_header_pattern.match(block)
+    if new_match:
+        author = new_match.group(1).strip()
+        raw_date = new_match.group(2).strip()  # 4 апр. 2026
+        time_part = new_match.group(3).strip()  # 15:39
+        body = new_match.group(4).strip()
+
+        review_date = normalize_telegram_date(raw_date)
+        message_datetime = f"{review_date} {time_part}" if review_date else time_part
+
+        return {
+            "message_datetime": message_datetime,
+            "review_date": review_date,
+            "author": author,
+            "body": body,
+            "raw_block": block,
+        }
+
+    return None
 
 
 def split_chat_into_subreviews(body: str) -> List[str]:
-    body = normalize_spaces(body)
-    body = body.replace("\n", " ")
+    body = body.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not body:
+        return []
 
-    pattern = re.compile(
-        r"(?=(?:^|\s)(?:Стол\s*\d{2,4}\b|\d{2,4}\s*стол\b|\d{2,4}\s*,))",
+    lines = body.split("\n")
+
+    blocks = []
+    current_block = []
+
+    table_only_pattern = re.compile(r"^\s*\d{2,4}\s*$")
+    table_with_text_pattern = re.compile(r"^\s*\d{2,4}\b")
+    explicit_table_pattern = re.compile(
+        r"^\s*(?:Стол\s*\d{2,4}\b|\d{2,4}\s*стол\b|\d{2,4}\s*,)",
         re.IGNORECASE,
     )
 
-    matches = list(pattern.finditer(body))
-    if not matches:
-        return [body.strip()]
+    def starts_new_subreview(line: str) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
 
-    chunks = []
-    for i, match in enumerate(matches):
-        start = match.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
-        chunk = body[start:end].strip(" ,")
-        if chunk:
-            chunks.append(chunk)
+        return bool(
+            table_only_pattern.match(stripped)
+            or explicit_table_pattern.match(stripped)
+            or table_with_text_pattern.match(stripped)
+        )
 
-    prefix = body[: matches[0].start()].strip(" ,")
-    if prefix and chunks:
-        chunks[0] = f"{prefix} {chunks[0]}".strip()
+    for line in lines:
+        if starts_new_subreview(line):
+            if current_block:
+                block = "\n".join(current_block).strip()
+                if block:
+                    blocks.append(block)
+            current_block = [line]
+        else:
+            if current_block:
+                current_block.append(line)
+            else:
+                current_block = [line]
 
-    return chunks if chunks else [body.strip()]
+    if current_block:
+        block = "\n".join(current_block).strip()
+        if block:
+            blocks.append(block)
+
+    return blocks
 
 
 def extract_table_number(text: str) -> str:
+    if not text or not text.strip():
+        return ""
+
+    text = text.strip()
+
+    # 1. Первая непустая строка целиком состоит из номера стола
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines:
+        first_line = lines[0]
+        if re.fullmatch(r"\d{2,4}", first_line):
+            return first_line
+
+        match = re.match(r"^(\d{2,4})\b", first_line)
+        if match:
+            return match.group(1)
+
+    # 2. Явные форматы "Стол 223" / "223 стол"
     patterns = [
         r"\bСтол\s*(\d{2,4})\b",
         r"\bстол\s*(\d{2,4})\b",
         r"\b(\d{2,4})\s*стол\b",
         r"^\s*(\d{2,4})[,\s.]",
     ]
+
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
             return match.group(1)
+
     return ""
 
 
@@ -642,44 +834,132 @@ def classify_tonality_by_text(text: str) -> str:
     )
 
     strong_negative_markers = [
-        "не доставили",
-        "не доложили",
-        "не привезли",
-        "нет части заказа",
-        "сырой",
-        "сырая",
-        "сырое",
-        "есть невозможно",
-        "есть не возможно",
-        "невозможно есть",
-        "убрали из счета",
-        "убрали из счёта",
-        "отравление",
-        "отравились",
-        "стола нет",
-        "нет стола",
-        "не готово",
         "не забронировано",
+        "пресно",
+        "холодный",
+        "отравление",
+        "не работает",
+        "отравились",
+        "мутный",
+        "испорчено",
+        "испорчен",
+        "кислая",
+        "не съедобно",
+        "сырая",
+        "жесткий",
+        "не зашёл",
+        "не вкусные",
+        "есть не возможно",
+        "безвкусно",
+        "кислый",
+        "очень долго",
+        "сырые",
+        "жестковато",
+        "нагрубили",
+        "плохо",
+        "не приняли",
+        "холодные",
+        "не доставили",
+        "испорчена",
+        "не вкусно",
+        "обслуживали долго",
+        "сырое",
+        "мутное",
+        "сырой",
+        "невкусная",
+        "ужасно",
+        "жёсткий",
+        "не понравился",
+        "долго",
+        "остывший",
+        "очень плохо",
+        "есть невозможно",
+        "горчит",
+        "холодная",
+        "кошмар",
+        "не зашел",
+        "убрали из счета",
+        "холодное",
+        "отвратительно",
+        "не вкусное",
+        "ждали час",
+        "сухое",
+        "стола нет",
+        "хамили",
+        "не готово",
+        "грязно",
+        "не принесли",
+        "не вкусный",
+        "невкусные",
+        "не привезли",
+        "не понравилось",
+        "остывшее",
+        "убрали из счёта",
+        "нет стола",
+        "невозможно есть",
+        "мутная",
+        "невкусно",
+        "мутные",
+        "не зашло",
+        "жёстковато",
+        "забыли",
+        "сухая",
+        "нет части заказа",
+        "долго ждали",
+        "невкусный",
+        "пресновато",
+        "не понравилась",
+        "не понравились",
+        "кислое",
+        "невкусное",
+        "сухой",
+        "остыла",
+        "суховато",
+        "хуже",
+        "не вкусная",
+        "не доложили",
+        "пересолили",
+        "пересолено",
+        "пересол",
+        "пересолен",
+        "пересолена",
+        "недовольны",
+        "недоволен",
+        "не принял заказ",
+        "не приняли заказ",
+        "не приняла заказ" "не принял",
     ]
 
-    has_strong_negative = any(
-        phrase_in_text(text_lower, marker) for marker in strong_negative_markers
+    strong_negative_count = sum(
+        1 for marker in strong_negative_markers if phrase_in_text(text_lower, marker)
     )
+    has_strong_negative = strong_negative_count > 0
 
+    # Явно смешанный случай
     if pos_score > 0 and neg_score > 0 and has_mixed:
+        if strong_negative_count >= 1 and neg_score >= pos_score:
+            return "Негатив"
         return "Смешанный"
 
+    # Есть и позитив, и негатив
     if pos_score > 0 and neg_score > 0:
+        if strong_negative_count >= 2:
+            return "Негатив"
+        if has_strong_negative and neg_score >= pos_score:
+            return "Негатив"
         if has_strong_negative and pos_score <= 1:
             return "Негатив"
         return "Смешанный"
 
+    # Только негатив
     if neg_score > 0 and pos_score == 0:
         return "Негатив"
 
+    # Только позитив
     if pos_score > 0 and neg_score == 0:
         return "Позитив"
 
+    # Был негатив, но его попытались компенсировать
     if has_recovery and neg_score > 0:
         return "Негатив"
 
@@ -695,7 +975,15 @@ def classify_tonality_by_text(text: str) -> str:
         "все супер",
         "все отлично",
         "всё отлично",
-        "всё ок" "волшеб",
+        "всё ок",
+        "волшеб",
+        "понравился",
+        "понравилась",
+        "понравились",
+        "вкусный",
+        "вкусная",
+        "вкусное",
+        "вкусные",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_positive_patterns):
         return "Позитив"
@@ -708,6 +996,14 @@ def classify_tonality_by_text(text: str) -> str:
         "больше не придём",
         "больше не вернемся",
         "больше не вернёмся",
+        "не зашло",
+        "не зашел",
+        "не зашёл",
+        "не понравился",
+        "не понравилась",
+        "не понравились",
+        "суховато",
+        "пресновато",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_negative_patterns):
         return "Негатив"
@@ -787,7 +1083,38 @@ def extract_problem(text: str) -> str:
         ),
         (
             "Блюдо сырое / недоготовлено",
-            ["сырой", "сырая", "сырое", "недовар", "недожар", "хрустят"],
+            [
+                "сырой",
+                "сырая",
+                "сырое",
+                "недовар",
+                "недожар",
+                "хрустят",
+                "холодное",
+                "недоделали",
+                "не доделали",
+            ],
+        ),
+        (
+            "Блюдо холодное / остывшее",
+            [
+                "холодный",
+                "холодная",
+                "холодное",
+                "холодные",
+                "остывший",
+                "остыла",
+                "остывшее",
+                "остыло",
+                "прохладный",
+                "прохладная",
+                "прохладное",
+                "еле тёплый",
+                "еле теплый",
+                "еле тёплая",
+                "еле тёплое",
+                "еле теплое",
+            ],
         ),
         (
             "Долгое обслуживание",
@@ -799,6 +1126,10 @@ def extract_problem(text: str) -> str:
                 "слишком долго",
                 "очень долгое ожидание",
                 "не подходили",
+                "ждали больше",
+                "больше 20 минут",
+                "больше 30 минут",
+                "никто так и не подошёл",
             ],
         ),
         (
@@ -812,6 +1143,12 @@ def extract_problem(text: str) -> str:
                 "биглион",
                 "не списались бонусы",
                 "не начислились бонусы",
+                "бонусы",
+                "клуб-друзей",
+                "не начислили",
+                "не работает код",
+                "не работает промокод",
+                "промокод",
             ],
         ),
         (
@@ -859,13 +1196,32 @@ def extract_problem(text: str) -> str:
     return "; ".join(unique)
 
 
-def detect_type_and_priority(text: str) -> Tuple[str, str]:
-    text_lower = normalize_text_for_search(text)
+def detect_type_and_priority(text: str, review_tag: str = "") -> Tuple[str, str]:
+    text_lower = normalize_text_for_search(text).strip()
+
+    if not text_lower:
+        if review_tag == "Кухня":
+            return "Кухня / Кухня", "Низкий"
+        if review_tag == "Бар":
+            return "Бар / Напитки", "Низкий"
+        if review_tag == "Десерты":
+            return "Кухня / Десерты", "Низкий"
+        if review_tag == "Детское":
+            return "Кухня / Детское", "Низкий"
+        return "Сервис / Обслуживание", "Низкий"
 
     if has_negative_exception(text_lower):
         tonality = classify_tonality_by_text(text)
         if tonality == "Позитив":
-            return "Зал / Атмосфера", "Низкий"
+            if review_tag == "Кухня":
+                return "Кухня / Кухня", "Низкий"
+            if review_tag == "Бар":
+                return "Бар / Напитки", "Низкий"
+            if review_tag == "Десерты":
+                return "Кухня / Десерты", "Низкий"
+            if review_tag == "Детское":
+                return "Кухня / Детское", "Низкий"
+            return "Сервис / Обслуживание", "Низкий"
 
     rules = [
         {
@@ -883,7 +1239,11 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
         {
             "type": "Доставка / Приборы",
             "priority": "Высокий",
-            "patterns": ["ни единой салфетки", "без приборов", "без салфеток"],
+            "patterns": [
+                "ни единой салфетки",
+                "без приборов",
+                "без салфеток",
+            ],
         },
         {
             "type": "Кухня / Кухня",
@@ -892,6 +1252,7 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "сырой",
                 "сырая",
                 "сырое",
+                "сырые",
                 "не вкусно",
                 "невкусно",
                 "вообще не вкус",
@@ -906,17 +1267,55 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "передержали",
                 "хрустят",
                 "жестковато",
+                "жёстковато",
                 "жесткий",
                 "жёсткий",
                 "резиновый",
+                "резиновая",
+                "резиновое",
                 "сухой",
                 "сухая",
                 "сухое",
+                "суховато",
                 "горчит",
                 "кислый",
+                "кислая",
+                "кислое",
                 "холодный",
                 "холодная",
                 "холодное",
+                "холодные",
+                "кухня",
+                "со стороны кухни",
+                "забыли положить",
+                "не учли",
+                "не положили",
+                "не добавили",
+                "плохо прожарено",
+                "плохо прожарили",
+                "забыли добавить",
+                "остыла",
+                "остыл",
+                "остыло",
+                "остывшее",
+                "еле тёплый",
+                "еле теплый",
+                "еле теплое",
+                "еле тёплая",
+                "не понравился",
+                "не понравилась",
+                "не понравились",
+                "не зашло",
+                "не зашел",
+                "не зашёл",
+                "безвкусно",
+                "пресно",
+                "пресновато",
+                "пересолили",
+                "пересолено",
+                "пересол",
+                "пересолен",
+                "пересолена",
             ],
         },
         {
@@ -971,13 +1370,16 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
                 "в подвале",
                 "организацией мероприятия",
                 "не забронировано",
+                "не готово",
+                "стола нет",
+                "нет стола",
             ],
         },
     ]
 
     matched = []
     for rule in rules:
-        if any(pattern in text_lower for pattern in rule["patterns"]):
+        if any(phrase_in_text(text_lower, pattern) for pattern in rule["patterns"]):
             matched.append(rule)
 
     if matched:
@@ -995,14 +1397,35 @@ def detect_type_and_priority(text: str) -> Tuple[str, str]:
         return best["type"], best["priority"]
 
     tonality = classify_tonality_by_text(text)
+
+    if review_tag == "Кухня":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Кухня / Кухня", "Средний"
+        return "Кухня / Кухня", "Низкий"
+
+    if review_tag == "Бар":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Бар / Напитки", "Средний"
+        return "Бар / Напитки", "Низкий"
+
+    if review_tag == "Десерты":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Кухня / Десерты", "Средний"
+        return "Кухня / Десерты", "Низкий"
+
+    if review_tag == "Детское":
+        if tonality in ("Негатив", "Смешанный"):
+            return "Кухня / Детское", "Средний"
+        return "Кухня / Детское", "Низкий"
+
     if tonality == "Негатив":
         return "Сервис / Обслуживание", "Средний"
     if tonality == "Смешанный":
         return "Сервис / Обслуживание", "Средний"
     if tonality == "Позитив":
-        return "Зал / Атмосфера", "Низкий"
+        return "Сервис / Обслуживание", "Низкий"
 
-    return "", ""
+    return "Сервис / Обслуживание", "Низкий"
 
 
 def fallback_dish_tag_by_name(dish_name: str) -> str:
@@ -1332,14 +1755,14 @@ def parse_aggregator_body(
     tags = extract_tags(body)
 
     tonality = ensure_tonality(review_text, rating)
-    review_type, priority = detect_type_and_priority(review_text)
+    detected_dishes = detect_dishes(review_text)
+    review_tag = detect_review_tag(review_text, detected_dishes)
+    review_type, priority = detect_type_and_priority(review_text, review_tag)
     if not priority:
         priority = "Средний" if tonality in ["Негатив", "Смешанный"] else "Низкий"
 
     problem = extract_problem(review_text)
     what_done = extract_what_done(review_text)
-    detected_dishes = detect_dishes(review_text)
-    review_tag = detect_review_tag(review_text, detected_dishes)
     detected_dishes_str = ", ".join(item["dish"] for item in detected_dishes)
 
     row = {
@@ -1367,6 +1790,8 @@ def parse_chat_body(
     body: str,
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
     subreviews = split_chat_into_subreviews(body)
+    if not subreviews:
+        subreviews = [body]
     review_rows = []
     dish_rows = []
 
@@ -1376,17 +1801,17 @@ def parse_chat_body(
         is_noise = detect_noise(review_text)
 
         tonality = "" if is_noise else ensure_tonality(review_text)
+        problem = "" if is_noise else extract_problem(review_text)
+        what_done = "" if is_noise else extract_what_done(review_text)
+        detected_dishes = [] if is_noise else detect_dishes(review_text)
+        review_tag = "" if is_noise else detect_review_tag(review_text, detected_dishes)
         review_type, priority = (
-            ("", "") if is_noise else detect_type_and_priority(review_text)
+            ("", "") if is_noise else detect_type_and_priority(review_text, review_tag)
         )
 
         if not is_noise and not priority:
             priority = "Средний" if tonality in ["Негатив", "Смешанный"] else "Низкий"
 
-        problem = "" if is_noise else extract_problem(review_text)
-        what_done = "" if is_noise else extract_what_done(review_text)
-        detected_dishes = [] if is_noise else detect_dishes(review_text)
-        review_tag = "" if is_noise else detect_review_tag(review_text, detected_dishes)
         detected_dishes_str = ", ".join(item["dish"] for item in detected_dishes)
 
         row = {
