@@ -35,7 +35,7 @@ review_tag_list = [
     "Бар",
     "Сервис",
     "Зал",
-    "Другое",
+    "Десерт",
 ]
 type_list = [
     "Бар / Бар",
@@ -387,9 +387,19 @@ dish_table_style = TableStyleInfo(
 dish_table.tableStyleInfo = dish_table_style
 ws_dishes.add_table(dish_table)
 
+TONALITY_OPTIONS = ["Позитив", "Негатив", "Смешанный", "Не применимо"]
+
+formula_items = ",".join(TONALITY_OPTIONS)
 dv_dish_tonality = DataValidation(
-    type="list", formula1="=Справочники!$A$2:$A$5", allow_blank=True
+    type="list",
+    formula1=f'"{formula_items}"',
+    allow_blank=True,
 )
+ws_dishes.add_data_validation(dv_dish_tonality)
+dv_dish_tonality.add("H2:H5000")
+# dv_dish_tonality = DataValidation(
+#     type="list", formula1="=Справочники!$A$2:$A$5", allow_blank=True
+# )
 dv_dish_priority = DataValidation(
     type="list", formula1="=Справочники!$C$2:$C$5", allow_blank=True
 )
