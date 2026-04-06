@@ -48,3 +48,5 @@ restructured_dish_aliases.txt
 scripts/catalogs_debug.py
 scripts/parse_reviews_debug.py
 отзывы_README.docx
+ГОТОВЫЙ_РЕЗУЛЬТАТ/*.csv
+ГОТОВЫЙ_РЕЗУЛЬТАТ/*.xlsx
