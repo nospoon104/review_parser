@@ -15,7 +15,7 @@ OUTPUT_DIR = BASE_DIR / "ГОТОВЫЙ_РЕЗУЛЬТАТ"
 TEMPLATE_FILE = BASE_DIR / "ШАБЛОН_НЕ_ТРОГАТЬ" / "feedback_template.xlsx"
 INPUT_CSV = OUTPUT_DIR / "parsed_reviews.csv"
 INPUT_DISHES_CSV = OUTPUT_DIR / "parsed_dishes.csv"
-OUTPUT_XLSX = OUTPUT_DIR / "feedback_filled.xlsx"
+OUTPUT_XLSX = OUTPUT_DIR / "ГОТОВАЯ_ТАБЛИЦА.xlsx"
 
 
 def is_capa_needed(priority, tonality):
@@ -143,7 +143,7 @@ def main():
     except PermissionError:
         print("Ошибка: не удалось сохранить Excel-файл.")
         print(
-            "Возможно, файл feedback_filled.xlsx уже открыт. Закрой его и попробуй снова."
+            "Возможно, файл ГОТОВАЯ_ТАБЛИЦА.xlsx уже открыт. Закрой его и попробуй снова."
         )
         return 1
     except Exception as e:

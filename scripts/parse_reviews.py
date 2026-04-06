@@ -24,6 +24,8 @@ OUTPUT_DIR = BASE_DIR / "ГОТОВЫЙ_РЕЗУЛЬТАТ"
 OUTPUT_CSV = OUTPUT_DIR / "parsed_reviews.csv"
 OUTPUT_DISHES_CSV = OUTPUT_DIR / "parsed_dishes.csv"
 
+CURRENT_CAFE = "АндерСон Таганская 36"
+
 POSITIVE_MARKERS = [
     "вкусно",
     "очень вкусно",
@@ -1470,6 +1472,30 @@ def build_dish_catalog() -> List[Dict[str, object]]:
 DISH_CATALOG = build_dish_catalog()
 
 
+def remove_generic_dish_matches(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    def norm(s: str) -> str:
+        return normalize_text_for_search(s).strip()
+
+    result = []
+    for item in items:
+        item_name = norm(item["dish"])
+        should_drop = False
+
+        for other in items:
+            if item is other:
+                continue
+
+            other_name = norm(other["dish"])
+            if item_name != other_name and item_name in other_name:
+                should_drop = True
+                break
+
+        if not should_drop:
+            result.append(item)
+
+    return result
+
+
 def detect_dishes(text: str) -> List[Dict[str, str]]:
     text_n = normalize_text_for_search(text)
     found = []
@@ -1524,7 +1550,8 @@ def detect_dishes(text: str) -> List[Dict[str, str]]:
             if current_weight > saved_weight:
                 unique[dish] = item
 
-    return list(unique.values())
+    result = list(unique.values())
+    return remove_generic_dish_matches(result)
 
 
 def detect_review_tag(text: str, detected_dishes: List[Dict[str, str]]) -> str:
@@ -1750,7 +1777,7 @@ def parse_aggregator_body(
     body: str,
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
     body = normalize_spaces(body)
-    cafe = "АндерСон Таганская 36"
+    cafe = CURRENT_CAFE
     _, review_date, rating, review_text = parse_aggregator_review_text(body)
     tags = extract_tags(body)
 
@@ -1817,7 +1844,7 @@ def parse_chat_body(
         row = {
             "date": "",
             "source": "TableVisit",
-            "cafe": "АндерСон Таганская 36",
+            "cafe": CURRENT_CAFE,
             "table": table_number,
             "dish": detected_dishes_str,
             "problem": problem if problem else "Проблема не определена",
