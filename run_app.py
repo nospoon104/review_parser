@@ -120,8 +120,8 @@ def main():
 
     root = tk.Tk()
     root.title("Автоматическая обработка отзывов")
-    root.geometry("1100x720")
-    root.minsize(1100, 1000)
+    root.geometry("1000x900")
+    root.minsize(900, 700)
 
     title_label = tk.Label(
         root,
