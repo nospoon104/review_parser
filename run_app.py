@@ -4,6 +4,10 @@ import os
 import traceback
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
+import csv
+import json
+from datetime import datetime
+import subprocess
 
 import scripts.parse_reviews as parse_reviews_module
 from scripts.parse_reviews import main as parse_reviews_main
@@ -79,11 +83,91 @@ def open_output_folder():
         if os.name == "nt":
             os.startfile(OUTPUT_DIR)
         elif sys.platform == "darwin":
-            os.system(f'open "{OUTPUT_DIR}"')
+            subprocess.run(["open", str(OUTPUT_DIR)], check=False)
         else:
-            os.system(f'xdg-open "{OUTPUT_DIR}"')
+            subprocess.run(["xdg-open", str(OUTPUT_DIR)], check=False)
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось открыть папку результата:\n{e}")
+
+
+def _read_csv_rows(path: Path):
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def validate_artifacts_and_write_quality_report():
+    errors = []
+
+    parsed_reviews = OUTPUT_DIR / "parsed_reviews.csv"
+    parsed_dishes = OUTPUT_DIR / "parsed_dishes.csv"
+    final_xlsx = OUTPUT_DIR / "ГОТОВАЯ_ТАБЛИЦА.xlsx"
+
+    for p in [parsed_reviews, parsed_dishes, final_xlsx]:
+        if not p.exists():
+            errors.append(f"Не найден артефакт: {p}")
+
+    if errors:
+        return False, errors, {}
+
+    review_rows = _read_csv_rows(parsed_reviews)
+    dish_rows = _read_csv_rows(parsed_dishes)
+
+    if not review_rows:
+        errors.append("parsed_reviews.csv пустой")
+    if not dish_rows:
+        errors.append("parsed_dishes.csv пустой")
+
+    clean_reviews = [
+        r for r in review_rows if str(r.get("is_noise", "")).strip().lower() != "true"
+    ]
+
+    total = len(review_rows)
+    clean = len(clean_reviews)
+    noise = total - clean
+
+    def pct(v, base):
+        return round((v / base) * 100, 2) if base else 0.0
+
+    empty_tonality = sum(
+        1 for r in clean_reviews if not str(r.get("tonality", "")).strip()
+    )
+    empty_review_tag = sum(
+        1 for r in clean_reviews if not str(r.get("review_tag", "")).strip()
+    )
+    empty_dish = sum(1 for r in clean_reviews if not str(r.get("dish", "")).strip())
+    mixed_count = sum(
+        1 for r in clean_reviews if str(r.get("tonality", "")).strip() == "Смешанный"
+    )
+
+    report = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "files": {
+            "parsed_reviews_csv": str(parsed_reviews),
+            "parsed_dishes_csv": str(parsed_dishes),
+            "final_excel": str(final_xlsx),
+        },
+        "counts": {
+            "reviews_total": total,
+            "reviews_clean": clean,
+            "reviews_noise": noise,
+            "dish_mentions_total": len(dish_rows),
+        },
+        "quality": {
+            "empty_tonality_pct": pct(empty_tonality, clean),
+            "empty_review_tag_pct": pct(empty_review_tag, clean),
+            "empty_dish_pct": pct(empty_dish, clean),
+            "mixed_pct": pct(mixed_count, clean),
+        },
+        "status": "ok" if not errors else "error",
+        "errors": errors,
+    }
+
+    report_path = OUTPUT_DIR / "quality_report.json"
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    return len(errors) == 0, errors, report
 
 
 def run_pipeline(log_callback):
@@ -108,6 +192,23 @@ def run_pipeline(log_callback):
         log_callback("Ошибка на этапе формирования Excel.")
         return False
     log_callback("Excel-файл сформирован успешно.")
+
+    log_callback("[4/4] Валидация артефактов и quality report...")
+    ok, artifact_errors, report = validate_artifacts_and_write_quality_report()
+    if not ok:
+        for err in artifact_errors:
+            log_callback(f"[ARTIFACT] {err}")
+        return False
+
+    q = report.get("quality", {})
+    c = report.get("counts", {})
+    log_callback(
+        f"Quality: reviews_total={c.get('reviews_total', 0)}, "
+        f"clean={c.get('reviews_clean', 0)}, noise={c.get('reviews_noise', 0)}, "
+        f"empty_tonality={q.get('empty_tonality_pct', 0)}%, "
+        f"empty_review_tag={q.get('empty_review_tag_pct', 0)}%, "
+        f"empty_dish={q.get('empty_dish_pct', 0)}%, mixed={q.get('mixed_pct', 0)}%"
+    )
 
     log_callback("")
     log_callback("Обработка завершена успешно.")

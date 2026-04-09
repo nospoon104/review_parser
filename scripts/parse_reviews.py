@@ -3,6 +3,7 @@ import csv
 from pathlib import Path
 import sys
 from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
 
 from scripts.catalogs import (
     DEFAULT_DISHES,
@@ -112,7 +113,8 @@ POSITIVE_MARKERS = [
     "хорошие",
     "лучше чем обычно",
     "хорошо",
-    "превосходно" "потрясающе",
+    "превосходно",
+    "потрясающе",
 ]
 
 NEGATIVE_MARKERS = [
@@ -299,7 +301,8 @@ MIXED_MARKERS = [
     "странное",
     "странная",
     "привкус",
-    "странное сочетание" "странные сочетания",
+    "странное сочетание",
+    "странные сочетания",
 ]
 
 SERVICE_RECOVERY_MARKERS = [
@@ -537,15 +540,29 @@ def normalize_spaces(text: str) -> str:
     return text.strip()
 
 
+TYPO_MAP = {
+    "бифстрогонов": "бифстроганов",
+    "бистроганов": "бифстроганов",
+    "маракуйа": "маракуйя",
+    "фетучини": "феттучини",
+    "баскит": "баскский",
+    "овчека": "овечка",
+}
+
+
 def normalize_text_for_search(text: str) -> str:
     text = normalize_spaces(text).lower()
     text = text.replace("ё", "е")
-    text = text.replace("йе ", " ")
-    text = text.replace("яе ", " ")
+    text = text.replace("—", "-").replace("–", "-")
     text = re.sub(r"[\"«»()]+", " ", text)
     text = re.sub(r"[^а-яa-z0-9#\-\s.,]", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    text = text.replace("-", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+
+    for bad, good in TYPO_MAP.items():
+        text = text.replace(bad, good)
+
+    return text
 
 
 def clean_review_text(text: str) -> str:
@@ -819,21 +836,62 @@ def count_markers(text: str, markers: List[str]) -> int:
     return sum(1 for marker in markers if phrase_in_text(text, marker))
 
 
+POSITIVE_STEMS = [
+    r"восторг\w*",
+    r"шикар\w*",
+    r"великолеп\w*",
+    r"идеальн\w*",
+    r"бомб\w*",
+    r"нежн\w*",
+    r"сытн\w*",
+    r"сбалансирован\w*",
+    r"понрав\w*",
+    r"отличн\w*",
+]
+
+NEGATIVE_STEMS = [
+    r"\bневкус\w*|\bне\s+вкус\w*",
+    r"\bсыр(ой|ая|ое|ые|оват\w*)\b",
+    r"\bнедожар\w*|\bнедовар\w*",
+    r"\bпересол\w*",
+    r"\bж[её]стк\w*",
+    r"\bхолодн\w*|\bостыв\w*",
+    r"\bдолг\w*|\bжда\w*",
+    r"\bгрязн\w*",
+    r"\bне\s+(принес\w*|подал\w*|принял\w*|заметил\w*)\b|\bзабыл\w*",
+]
+
+NEGATED_POSITIVE_PATTERNS = [
+    r"\bне\s+уют\w*",
+    r"\bне\s+комфорт\w*",
+    r"\bне\s+прият\w*",
+]
+
+
+def _count_regex_hits(text: str, patterns: List[str]) -> int:
+    return sum(1 for p in patterns if re.search(p, text, re.IGNORECASE))
+
+
 def classify_tonality_by_text(text: str) -> str:
     text_lower = normalize_text_for_search(text).strip()
-
     if not text_lower:
         return ""
 
     if has_negative_exception(text_lower):
         return "Позитив"
 
+    # 1) ТВОИ базовые маркеры (сохраняем)
     pos_score = count_markers(text_lower, POSITIVE_MARKERS)
     neg_score = count_markers(text_lower, NEGATIVE_MARKERS)
     has_mixed = any(phrase_in_text(text_lower, marker) for marker in MIXED_MARKERS)
     has_recovery = any(
         phrase_in_text(text_lower, marker) for marker in SERVICE_RECOVERY_MARKERS
     )
+
+    # 2) ДОБАВЛЯЕМ стемы (не заменяем)
+    pos_score += _count_regex_hits(text_lower, POSITIVE_STEMS)
+    neg_score += _count_regex_hits(text_lower, NEGATIVE_STEMS)
+    neg_score += _count_regex_hits(text_lower, NEGATED_POSITIVE_PATTERNS)
 
     strong_negative_markers = [
         "не забронировано",
@@ -849,6 +907,7 @@ def classify_tonality_by_text(text: str) -> str:
         "не съедобно",
         "сырая",
         "жесткий",
+        "не зашел",
         "не зашёл",
         "не вкусные",
         "есть не возможно",
@@ -874,13 +933,13 @@ def classify_tonality_by_text(text: str) -> str:
         "не понравился",
         "долго",
         "остывший",
-        "очень плохо",
+        "очнь плохо",
         "есть невозможно",
         "горчит",
         "холодная",
         "кошмар",
-        "не зашел",
         "убрали из счета",
+        "убрали из счёта",
         "холодное",
         "отвратительно",
         "не вкусное",
@@ -896,7 +955,6 @@ def classify_tonality_by_text(text: str) -> str:
         "не привезли",
         "не понравилось",
         "остывшее",
-        "убрали из счёта",
         "нет стола",
         "невозможно есть",
         "мутная",
@@ -929,7 +987,8 @@ def classify_tonality_by_text(text: str) -> str:
         "недоволен",
         "не принял заказ",
         "не приняли заказ",
-        "не приняла заказ" "не принял",
+        "не приняла заказ",
+        "не принял",  # <-- фикс запятой
     ]
 
     strong_negative_count = sum(
@@ -945,6 +1004,9 @@ def classify_tonality_by_text(text: str) -> str:
 
     # Есть и позитив, и негатив
     if pos_score > 0 and neg_score > 0:
+        # компенсация сервиса -> не позитив, обычно mixed/negative
+        if has_recovery and neg_score >= pos_score:
+            return "Негатив"
         if strong_negative_count >= 2:
             return "Негатив"
         if has_strong_negative and neg_score >= pos_score:
@@ -960,10 +1022,6 @@ def classify_tonality_by_text(text: str) -> str:
     # Только позитив
     if pos_score > 0 and neg_score == 0:
         return "Позитив"
-
-    # Был негатив, но его попытались компенсировать
-    if has_recovery and neg_score > 0:
-        return "Негатив"
 
     fallback_positive_patterns = [
         "все понравилось",
@@ -1199,6 +1257,7 @@ def extract_problem(text: str) -> str:
 
 
 def detect_type_and_priority(text: str, review_tag: str = "") -> Tuple[str, str]:
+    review_tag = normalize_review_tag(review_tag)
     text_lower = normalize_text_for_search(text).strip()
 
     if not text_lower:
@@ -1206,7 +1265,7 @@ def detect_type_and_priority(text: str, review_tag: str = "") -> Tuple[str, str]
             return "Кухня / Кухня", "Низкий"
         if review_tag == "Бар":
             return "Бар / Напитки", "Низкий"
-        if review_tag == "Десерты":
+        if review_tag == "Десерт":
             return "Кухня / Десерты", "Низкий"
         if review_tag == "Детское":
             return "Кухня / Детское", "Низкий"
@@ -1219,7 +1278,7 @@ def detect_type_and_priority(text: str, review_tag: str = "") -> Tuple[str, str]
                 return "Кухня / Кухня", "Низкий"
             if review_tag == "Бар":
                 return "Бар / Напитки", "Низкий"
-            if review_tag == "Десерты":
+            if review_tag == "Десерт":
                 return "Кухня / Десерты", "Низкий"
             if review_tag == "Детское":
                 return "Кухня / Детское", "Низкий"
@@ -1554,11 +1613,28 @@ def detect_dishes(text: str) -> List[Dict[str, str]]:
     return remove_generic_dish_matches(result)
 
 
+def _keyword_weight(keyword: str) -> float:
+    n = len(normalize_text_for_search(keyword).split())
+    if n >= 3:
+        return 2.2
+    if n == 2:
+        return 1.6
+    return 1.0
+
+
+def normalize_review_tag(tag: str) -> str:
+    if tag == "Десерты":
+        return "Десерт"
+    return tag
+
+
 def detect_review_tag(text: str, detected_dishes: List[Dict[str, str]]) -> str:
     if detected_dishes:
-        priority_order = ["Кухня", "Бар", "Десерты", "Детское"]
+        priority_order = ["Кухня", "Бар", "Десерт", "Детское"]
         dish_tags = [
-            item["dish_tag"] for item in detected_dishes if item.get("dish_tag")
+            normalize_review_tag(item.get("dish_tag", ""))
+            for item in detected_dishes
+            if item.get("dish_tag")
         ]
         for tag in priority_order:
             if tag in dish_tags:
@@ -1567,11 +1643,23 @@ def detect_review_tag(text: str, detected_dishes: List[Dict[str, str]]) -> str:
             return dish_tags[0]
 
     text_n = normalize_text_for_search(text)
-    scores = {}
+    scores: Dict[str, float] = {}
+
     for tag, keywords in REVIEW_TAG_KEYWORDS.items():
-        score = sum(1 for keyword in keywords if phrase_in_text(text_n, keyword))
+        score = 0.0
+        for keyword in keywords:
+            kw = normalize_text_for_search(keyword)
+            if not kw:
+                continue
+            if len(kw.split()) == 1:
+                if re.search(rf"\b{re.escape(kw)}\b", text_n):
+                    score += _keyword_weight(kw)
+            else:
+                if kw in text_n:
+                    score += _keyword_weight(kw)
+        tag_n = normalize_review_tag(tag)
         if score > 0:
-            scores[tag] = score
+            scores[tag_n] = scores.get(tag_n, 0.0) + score
 
     if not scores:
         tonality = classify_tonality_by_text(text)
@@ -1592,6 +1680,28 @@ def detect_noise(text: str) -> bool:
         return True
 
     if not re.search(r"[а-яa-z0-9]", text_lower, re.IGNORECASE):
+        return True
+
+    meta_noise_patterns = [
+        "теперь каждый стол сюда прописываем",
+        "за день не может быть",
+        "коллеги давайте",
+        "мне это завтра заливать",
+        "сделай еще tv",
+        "возобновляем тейбл визит",
+        "сюда пишем",
+        "в таблицу",
+        "в программу",
+        "в отчет",
+        "в отчёт",
+    ]
+
+    has_meta_noise = any(phrase_in_text(text_lower, p) for p in meta_noise_patterns)
+    has_table = bool(extract_table_number(text))
+    has_dishes = bool(detect_dishes(text))
+    has_tonality = bool(classify_tonality_by_text(text))
+
+    if has_meta_noise and not has_table and not has_dishes and not has_tonality:
         return True
 
     review_score = 0

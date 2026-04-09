@@ -1,1 +1,2 @@
-openpyxl
+pytest==8.4.0
+openpyxl==3.1.5
