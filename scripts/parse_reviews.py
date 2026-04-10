@@ -1675,127 +1675,113 @@ def detect_noise(text: str) -> bool:
 
     if not text_lower:
         return True
-
     if text_lower in SHORT_REPLIES:
         return True
-
     if not re.search(r"[а-яa-z0-9]", text_lower, re.IGNORECASE):
         return True
 
-    meta_noise_patterns = [
-        "теперь каждый стол сюда прописываем",
-        "за день не может быть",
-        "коллеги давайте",
-        "мне это завтра заливать",
-        "сделай еще tv",
-        "возобновляем тейбл визит",
+    has_table = bool(extract_table_number(text))
+    has_guest_anchor = bool(re.search(r"\bгост(ь|и|ю|ям|ями|ях)\b", text_lower))
+    has_order_anchor = bool(
+        re.search(
+            r"\b(заказ|счет|счёт|официант|чек|принесли|подали|принес|подал)\b",
+            text_lower,
+        )
+    )
+    has_review_anchor = has_table or has_guest_anchor or has_order_anchor
+
+    # Операционный/внутренний диалоговый шум (без якорей отзыва)
+    operational_markers = [
+        "давайте",
+        "мы должны",
+        "не будем",
+        "выжидать",
+        "предупреждать",
+        "сделай",
         "сюда пишем",
         "в таблицу",
         "в программу",
         "в отчет",
         "в отчёт",
+        "заливать",
+        "фиксируйте",
+        "проверьте",
+        "скиньте",
+        "отправьте",
+        "добавьте",
     ]
+    has_operational = any(phrase_in_text(text_lower, m) for m in operational_markers)
 
-    has_meta_noise = any(phrase_in_text(text_lower, p) for p in meta_noise_patterns)
-    has_table = bool(extract_table_number(text))
-    has_dishes = bool(detect_dishes(text))
-    has_tonality = bool(classify_tonality_by_text(text))
+    # Имя в обращении: "нет, макс ...", "макс, ..."
+    has_name_call = bool(
+        re.search(r"\b(нет|слушай|смотри|ну)\s*,?\s*[а-яё]{3,}\b", text_lower)
+        or re.search(r"^[а-яё]{3,}\s*,", text_lower)
+    )
 
-    if has_meta_noise and not has_table and not has_dishes and not has_tonality:
+    # Варианты про TV/ТВ
+    has_tv_meta = bool(re.search(r"\bсделай\s+еще\s+([tт][vв]|тв)\b", text_lower))
+
+    # Жесткое правило: нет якорей + операционный контекст
+    if not has_review_anchor and (has_operational or has_name_call or has_tv_meta):
         return True
 
     review_score = 0
     noise_score = 0
 
     review_patterns = [
-        r"\bстол\s*\d{2,4}\b",
-        r"\b\d{2,4}\s*стол\b",
-        r"^\s*\d{2,4}\s*,",
+        r"\bстол\s*\d{1,4}\b",
+        r"\b\d{1,4}\s*стол\b",
         r"\bгость\b",
         r"\bгости\b",
-        r"\bгостю\b",
-        r"\bгостям\b",
         r"\bзаказ\b",
         r"\bблюдо\b",
-        r"\bеда\b",
-        r"\bнапиток\b",
-        r"\bдоставка\b",
         r"\bвкусно\b",
         r"\bневкусно\b",
         r"\bне вкусно\b",
-        r"\bпонравилось\b",
         r"\bне понравилось\b",
-        r"\bсырой\b",
-        r"\bхолодн",
-        r"\bгоряч",
+        r"\bхолодн\w*\b",
+        r"\bгоряч\w*\b",
         r"\bдолго\b",
-        r"\bбыстро\b",
         r"\bгрязно\b",
-        r"\bшумно\b",
-        r"\bизвинил",
-        r"\bубрали из счет",
-        r"\bубрали из счёта",
-        r"\bзаменили\b",
-        r"\bпеределали\b",
-        r"\bкомплимент\b",
         r"[★☆]{3,5}",
-        r"\bяндекс\b",
-        r"\b2гис\b",
-        r"\bgastroreview\b",
     ]
+    matched_review_patterns = sum(
+        1 for p in review_patterns if re.search(p, text_lower, re.IGNORECASE)
+    )
 
-    for pattern in review_patterns:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            review_score += 2
+    # Без якорей — ослабляем "отзывность"
+    review_score += matched_review_patterns * (2 if has_review_anchor else 1)
 
-    review_score += sum(1 for word in REVIEW_KEYWORDS if word in text_lower)
-    noise_score += sum(1 for word in NOISE_KEYWORDS if word in text_lower)
+    # ВАЖНО: по словам считаем с границами, не через "in"
+    review_score += sum(
+        1
+        for w in REVIEW_KEYWORDS
+        if re.search(
+            rf"(?<![а-яa-z0-9]){re.escape(w)}(?![а-яa-z0-9])", text_lower, re.IGNORECASE
+        )
+    )
+    noise_score += sum(
+        1
+        for w in NOISE_KEYWORDS
+        if re.search(
+            rf"(?<![а-яa-z0-9]){re.escape(w)}(?![а-яa-z0-9])", text_lower, re.IGNORECASE
+        )
+    )
 
     if len(text_lower) < 20:
         noise_score += 2
+    elif len(text_lower) < 35:
+        noise_score += 1
 
-    imperative_markers = [
-        "давайте",
-        "пишите",
-        "вносите",
-        "смотрите",
-        "проверьте",
-        "скиньте",
-        "добавьте",
-        "отправьте",
-        "не забывайте",
-        "фиксируйте",
-    ]
-    noise_score += sum(1 for word in imperative_markers if word in text_lower)
+    if re.search(r"\b(что|чтобы|если|когда|но|а|и)\s*$", text_lower):
+        noise_score += 2
 
-    if extract_table_number(text):
-        review_score += 3
-
-    if any(
-        word in text_lower
-        for word in [
-            "гость",
-            "гости",
-            "вкусно",
-            "невкусно",
-            "заказ",
-            "доставка",
-            "омлет",
-            "пицца",
-            "бургер",
-        ]
-    ):
-        review_score += 2
-
-    if classify_tonality_by_text(text):
-        review_score += 3
-
-    if detect_dishes(text):
-        review_score += 3
+    if not has_review_anchor and bool(classify_tonality_by_text(text)):
+        # Тональность без якорей часто ложная для обрывков речи
+        noise_score += 1
 
     if review_score == 0 and noise_score >= 2:
         return True
-
     if noise_score >= review_score + 2:
         return True
 
@@ -1923,31 +1909,58 @@ def parse_aggregator_body(
     return [row], dish_rows
 
 
+def has_table_anchor_only(table_number: str) -> bool:
+    """
+    Жесткое правило:
+    если в сообщении нет номера стола -> это шум, а то я с ума сойду эвристики для шума и правила придумывать.
+    """
+    return bool(table_number and table_number.strip())
+
+
 def parse_chat_body(
     body: str,
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
     subreviews = split_chat_into_subreviews(body)
     if not subreviews:
         subreviews = [body]
+
     review_rows = []
     dish_rows = []
 
     for subreview in subreviews:
         table_number = extract_table_number(subreview)
         review_text = clean_review_text(subreview)
-        is_noise = detect_noise(review_text)
 
-        tonality = "" if is_noise else ensure_tonality(review_text)
-        problem = "" if is_noise else extract_problem(review_text)
-        what_done = "" if is_noise else extract_what_done(review_text)
-        detected_dishes = [] if is_noise else detect_dishes(review_text)
-        review_tag = "" if is_noise else detect_review_tag(review_text, detected_dishes)
-        review_type, priority = (
-            ("", "") if is_noise else detect_type_and_priority(review_text, review_tag)
-        )
+        # ЖЕСТКИЙ ГЕЙТ:
+        # Нет номера стола -> сразу шум (без попыток классификации)
+        if not has_table_anchor_only(table_number):
+            is_noise = True
+            tonality = ""
+            problem = ""
+            what_done = ""
+            detected_dishes = []
+            review_tag = ""
+            review_type, priority = "", ""
+        else:
+            is_noise = detect_noise(review_text)
 
-        if not is_noise and not priority:
-            priority = "Средний" if tonality in ["Негатив", "Смешанный"] else "Низкий"
+            tonality = "" if is_noise else ensure_tonality(review_text)
+            problem = "" if is_noise else extract_problem(review_text)
+            what_done = "" if is_noise else extract_what_done(review_text)
+            detected_dishes = [] if is_noise else detect_dishes(review_text)
+            review_tag = (
+                "" if is_noise else detect_review_tag(review_text, detected_dishes)
+            )
+            review_type, priority = (
+                ("", "")
+                if is_noise
+                else detect_type_and_priority(review_text, review_tag)
+            )
+
+            if not is_noise and not priority:
+                priority = (
+                    "Средний" if tonality in ["Негатив", "Смешанный"] else "Низкий"
+                )
 
         detected_dishes_str = ", ".join(item["dish"] for item in detected_dishes)
 
@@ -1974,7 +1987,25 @@ def parse_chat_body(
     return review_rows, dish_rows
 
 
+# def _self_test_noise():
+#     samples = [
+#         "Доброе утро. Тогда давайте блюдо холодной давать в будем",
+#         "Нет, Макс мы ничего выжидать не будем",
+#         "Мы должны предупреждать родителей, о том, что нагнетая горячие",
+#         "можно с ними посидеть подуть им чтобы не горячо было",
+#         "Макс, сделай еще тv, мало за сегодня",
+#         "Гость: пицца холодная, заменили, извинились",  # это НЕ шум
+#     ]
+#     print("\n=== SELF TEST detect_noise ===")
+#     for s in samples:
+#         print(detect_noise(s), " | ", s)
+#     print("=== END SELF TEST ===\n")
+
+
 def main():
+    # _self_test_noise()
+    # print("RUN FILE:", __file__)
+
     try:
         with open(INPUT_FILE, "r", encoding="utf-8") as f:
             raw_text = f.read()
