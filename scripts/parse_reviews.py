@@ -115,6 +115,30 @@ POSITIVE_MARKERS = [
     "хорошо",
     "превосходно",
     "потрясающе",
+    "мега вайб",
+    "супер вайб",
+    "вообще вайб",
+    "крутой вайб",
+    "все зашло",
+    "на ура",
+    "доволен",
+    "довольна",
+    "довольны",
+    "чудесные",
+    "чудесно",
+    "чудесная",
+    "чудесный",
+    "превосходный",
+    "превосходное",
+    "превосходная",
+    "превосходные",
+    "вау",
+    "очень хвалили",
+    "очень хвалил",
+    "очень хвалила",
+    "хвалит",
+    "что надо",
+    "то что надо" "превосходны",
 ]
 
 NEGATIVE_MARKERS = [
@@ -135,6 +159,9 @@ NEGATIVE_MARKERS = [
     "не зашло",
     "ужасно",
     "отвратительно",
+    "отвратительный",
+    "отвратительная",
+    "отвратительное",
     "кошмар",
     "так себе",
     "плохо",
@@ -166,6 +193,8 @@ NEGATIVE_MARKERS = [
     "жёсткий",
     "жёсткая",
     "жесткая",
+    "жёсткое",
+    "жесткое",
     "водянистый",
     "водянистая",
     "водянситое",
@@ -273,6 +302,20 @@ NEGATIVE_MARKERS = [
     "хромает",
     "никакой",
     "ни о чём",
+    "можно обжечься",
+    "слишком горячее",
+    "обжегся",
+    "обожглась",
+    "обожглись",
+    "очень горячее",
+    "слишком горячая",
+    "слишком горячий",
+    "не достаточно горячий",
+    "не достаточно горячая",
+    "недостаточно горячий",
+    "недостаточно горячая",
+    "не достаточно горячее",
+    "недостаточно горячее",
 ]
 
 MIXED_MARKERS = [
@@ -307,6 +350,7 @@ MIXED_MARKERS = [
     "странные сочетания",
     "не достаточно горячий",
     "не достаточно тёплый",
+    "лучше бы",
 ]
 
 SERVICE_RECOVERY_MARKERS = [
@@ -551,6 +595,7 @@ TYPO_MAP = {
     "фетучини": "феттучини",
     "баскит": "баскский",
     "овчека": "овечка",
+    "запечони": "запеченные",
 }
 
 
@@ -602,17 +647,23 @@ def split_messages(text: str) -> List[str]:
     lines = text.splitlines()
 
     old_header_pattern = re.compile(r"^\[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\] .+?:.*$")
-    new_header_pattern = re.compile(
+
+    new_header_pattern_text_month = re.compile(
         r"^.+?, \[\d{1,2} [А-Яа-яЁё.]+ \d{4} в \d{2}:\d{2}\]\s*$"
     )
 
+    new_header_pattern_numeric = re.compile(
+        r"^.+?, \[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\]\s*$"
+    )
     blocks = []
     current_block = []
 
     def is_header_line(line: str) -> bool:
         stripped = line.strip()
         return bool(
-            old_header_pattern.match(stripped) or new_header_pattern.match(stripped)
+            old_header_pattern.match(stripped)
+            or new_header_pattern_text_month.match(stripped)
+            or new_header_pattern_numeric.match(stripped)
         )
 
     for line in lines:
@@ -685,7 +736,26 @@ def parse_message_block(block: str) -> Optional[Dict[str, str]]:
             "body": body,
             "raw_block": block,
         }
+    numeric_header_pattern = re.compile(
+        r"^(.+?), \[(\d{2}\.\d{2}\.\d{4}) (\d{2}:\d{2})\]\s*(.*)$",
+        re.DOTALL,
+    )
+    numeric_match = numeric_header_pattern.match(block)
+    if numeric_match:
+        author = numeric_match.group(1).strip()
+        review_date = numeric_match.group(2).strip()
+        time_part = numeric_match.group(3).strip()
+        body = numeric_match.group(4).strip()
 
+        message_datetime = f"{review_date} {time_part}"
+
+        return {
+            "message_datetime": message_datetime,
+            "review_date": review_date,
+            "author": author,
+            "body": body,
+            "raw_block": block,
+        }
     return None
 
 
@@ -1052,6 +1122,10 @@ def classify_tonality_by_text(text: str) -> str:
         "вкусная",
         "вкусное",
         "вкусные",
+        "все очень понравилось",
+        "всё очень понравилось",
+        "ушли с улыбками",
+        "ушли с улыбкой" "не пожалели",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_positive_patterns):
         return "Позитив"
@@ -1077,6 +1151,35 @@ def classify_tonality_by_text(text: str) -> str:
         return "Негатив"
 
     return ""
+
+
+def classify_dish_mention_tonality(review_text: str, dish_name: str) -> str:
+    """
+    Определяет тональность конкретно по блюду.
+    Если в отзыве несколько блюд — старается найти ближайший контекст.
+    """
+    text_n = normalize_text_for_search(review_text)
+    dish_n = normalize_text_for_search(dish_name)
+
+    # Если блюдо вообще не найдено — падаем на общую тональность
+    if dish_n not in text_n:
+        return ensure_tonality(review_text)
+
+    # Разбиваем отзыв на предложения (простой сплит по . ! ?)
+    sentences = re.split(r"[.!?]+", review_text)
+    dish_sentences = []
+
+    for sent in sentences:
+        sent_n = normalize_text_for_search(sent)
+        if dish_n in sent_n or any(word in sent_n for word in dish_n.split()):
+            dish_sentences.append(sent.strip())
+
+    if not dish_sentences:
+        return ensure_tonality(review_text)
+
+    # Берём первое (или единственное) предложение про это блюдо
+    context = " ".join(dish_sentences[:2])  # на всякий случай два
+    return ensure_tonality(context)
 
 
 def classify_tonality_aggregator(rating: str, text: str) -> str:
@@ -1546,7 +1649,6 @@ def _is_generic_dish_name(name: str) -> bool:
 
 def _generic_family_tokens(name: str) -> set:
     n = normalize_text_for_search(name)
-    # убираем маркер generic
     n = re.sub(r"\bнеуточнен\w*\b", " ", n)
     n = re.sub(r"\bнеуточн\w*\b", " ", n)
     tokens = [t for t in n.split() if t]
@@ -1578,18 +1680,15 @@ def remove_generic_dish_matches(items: List[Dict[str, str]]) -> List[Dict[str, s
             other_name = other["dish"]
             other_name_n = norm(other_name)
 
-            # сравниваем только с НЕ-generic
             if _is_generic_dish_name(other_name):
                 continue
 
             other_tokens = set(other_name_n.split())
 
-            # 1) семейство generic входит в конкретное блюдо
             if family and family.issubset(other_tokens):
                 should_drop = True
                 break
 
-            # 2) fallback: generic matched_phrase встречается в конкретном названии
             mp = normalize_text_for_search(item.get("matched_phrase", ""))
             if mp and re.search(
                 rf"(?<![а-яa-z0-9]){re.escape(mp)}(?![а-яa-z0-9])", other_name_n
@@ -1871,6 +1970,10 @@ def build_dish_rows(
 ) -> List[Dict[str, object]]:
     dish_rows = []
     for item in detected_dishes:
+        dish_tonality = classify_dish_mention_tonality(
+            base_row["review_text"], item["dish"]
+        )
+
         dish_rows.append(
             {
                 "date": base_row["date"],
@@ -1880,9 +1983,11 @@ def build_dish_rows(
                 "dish": item["dish"],
                 "dish_tag": item["dish_tag"],
                 "review_text": base_row["review_text"],
-                "mention_tonality": base_row["tonality"],
-                "priority": base_row["priority"],
-                "problem": base_row["problem"],
+                "mention_tonality": dish_tonality,  # ← было base_row["tonality"]
+                "priority": base_row[
+                    "priority"
+                ],  # можно тоже сделать dish-specific позже
+                "problem": base_row["problem"],  # можно тоже уточнить
                 "is_noise": base_row["is_noise"],
             }
         )
