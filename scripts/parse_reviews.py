@@ -196,6 +196,8 @@ NEGATIVE_MARKERS = [
     "очень долго",
     "долго несли",
     "долго ждали",
+    "долго ждал",
+    "долго ждала",
     "ждали долго",
     "обслуживали долго",
     "слишком долго",
@@ -303,6 +305,8 @@ MIXED_MARKERS = [
     "привкус",
     "странное сочетание",
     "странные сочетания",
+    "не достаточно горячий",
+    "не достаточно тёплый",
 ]
 
 SERVICE_RECOVERY_MARKERS = [
@@ -988,7 +992,11 @@ def classify_tonality_by_text(text: str) -> str:
         "не принял заказ",
         "не приняли заказ",
         "не приняла заказ",
-        "не принял",  # <-- фикс запятой
+        "не принял",
+        "можно обжечься",
+        "обжегся",
+        "обожглись",
+        "обожглась",
     ]
 
     strong_negative_count = sum(
@@ -1531,21 +1539,61 @@ def build_dish_catalog() -> List[Dict[str, object]]:
 DISH_CATALOG = build_dish_catalog()
 
 
+def _is_generic_dish_name(name: str) -> bool:
+    n = normalize_text_for_search(name)
+    return "неуточнен" in n or "неуточн" in n
+
+
+def _generic_family_tokens(name: str) -> set:
+    n = normalize_text_for_search(name)
+    # убираем маркер generic
+    n = re.sub(r"\bнеуточнен\w*\b", " ", n)
+    n = re.sub(r"\bнеуточн\w*\b", " ", n)
+    tokens = [t for t in n.split() if t]
+    return set(tokens)
+
+
 def remove_generic_dish_matches(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
     def norm(s: str) -> str:
         return normalize_text_for_search(s).strip()
 
     result = []
     for item in items:
-        item_name = norm(item["dish"])
+        item_name = item["dish"]
+        item_name_n = norm(item_name)
+
+        # если не generic — оставляем
+        if not _is_generic_dish_name(item_name):
+            result.append(item)
+            continue
+
+        # generic удаляем, если есть более конкретное блюдо того же "семейства"
+        family = _generic_family_tokens(item_name)
         should_drop = False
 
         for other in items:
             if item is other:
                 continue
 
-            other_name = norm(other["dish"])
-            if item_name != other_name and item_name in other_name:
+            other_name = other["dish"]
+            other_name_n = norm(other_name)
+
+            # сравниваем только с НЕ-generic
+            if _is_generic_dish_name(other_name):
+                continue
+
+            other_tokens = set(other_name_n.split())
+
+            # 1) семейство generic входит в конкретное блюдо
+            if family and family.issubset(other_tokens):
+                should_drop = True
+                break
+
+            # 2) fallback: generic matched_phrase встречается в конкретном названии
+            mp = normalize_text_for_search(item.get("matched_phrase", ""))
+            if mp and re.search(
+                rf"(?<![а-яa-z0-9]){re.escape(mp)}(?![а-яa-z0-9])", other_name_n
+            ):
                 should_drop = True
                 break
 
