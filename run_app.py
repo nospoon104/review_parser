@@ -4,48 +4,11 @@ import os
 import traceback
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
-import csv
-import json
-from datetime import datetime
 import subprocess
 
-import scripts.parse_reviews as parse_reviews_module
-from scripts.parse_reviews import main as parse_reviews_main
-from scripts.load_reviews_to_excel import main as load_reviews_to_excel_main
-
-
-def get_base_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
-
-
-BASE_DIR = get_base_dir()
-
-INPUT_DIR = BASE_DIR / "ПОЛОЖИТЬ_СЮДА_ФАЙЛ_С_ОТЗЫВАМИ"
-OUTPUT_DIR = BASE_DIR / "ГОТОВЫЙ_РЕЗУЛЬТАТ"
-TEMPLATE_DIR = BASE_DIR / "ШАБЛОН_НЕ_ТРОГАТЬ"
-
-INPUT_FILE = INPUT_DIR / "raw_reviews.txt"
-TEMPLATE_FILE = TEMPLATE_DIR / "feedback_template.xlsx"
-
-CAFE_OPTIONS = [
-    "АндерСон Таганская 36",
-    "АндерСон Авеню",
-    "АндерСон Братиславская",
-    "АндерСон Бутово",
-    "АндерСон Гагаринский",
-    "АндерСон Гиляровского",
-    "АндерСон Домодедово",
-    "АндерСон Кусковская",
-    "АндерСон Каскад",
-    "АндерСон Медведково",
-    "АндерСон Мичуринский",
-    "АндерСон Обручева",
-    "АндерСон Островитянова",
-    "АндерСон Сокол",
-    "АндерСон Царицыно",
-]
+# Новый импорт из нашего чистого ядра
+from core.processor import ReviewProcessor
+from core.config import get_config
 
 
 def get_open_command(path: Path) -> str:
@@ -57,172 +20,98 @@ def get_open_command(path: Path) -> str:
     return f'xdg-open "{path_str}"'
 
 
-def ensure_directories():
-    INPUT_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    TEMPLATE_DIR.mkdir(exist_ok=True)
+def ensure_directories(config):
+    config.input_dir.mkdir(exist_ok=True)
+    config.output_dir.mkdir(exist_ok=True)
+    config.template_dir.mkdir(exist_ok=True)
 
 
-def validate_files_for_gui():
-    if not TEMPLATE_FILE.exists():
+def validate_files_for_gui(config):
+    if not config.template_file.exists():
         return (
             False,
-            "Ошибка: не найден шаблон feedback_template.xlsx\n"
-            f"Ожидаемый путь:\n{TEMPLATE_FILE}\n\n"
+            f"Ошибка: не найден шаблон feedback_template.xlsx\n"
+            f"Ожидаемый путь:\n{config.template_file}\n\n"
             "Проверь, что шаблон лежит в папке 'ШАБЛОН_НЕ_ТРОГАТЬ'.",
         )
     return True, ""
 
 
-def save_input_text(raw_text: str):
-    INPUT_FILE.write_text(raw_text, encoding="utf-8")
+def save_input_text(config, raw_text: str):
+    config.input_file.write_text(raw_text, encoding="utf-8")
 
 
-def open_output_folder():
+def open_output_folder(config):
     try:
         if os.name == "nt":
-            os.startfile(OUTPUT_DIR)
+            os.startfile(config.output_dir)
         elif sys.platform == "darwin":
-            subprocess.run(["open", str(OUTPUT_DIR)], check=False)
+            subprocess.run(["open", str(config.output_dir)], check=False)
         else:
-            subprocess.run(["xdg-open", str(OUTPUT_DIR)], check=False)
+            subprocess.run(["xdg-open", str(config.output_dir)], check=False)
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось открыть папку результата:\n{e}")
 
 
-def _read_csv_rows(path: Path):
-    with open(path, "r", encoding="utf-8-sig", newline="") as f:
-        return list(csv.DictReader(f))
+def run_pipeline(
+    processor: ReviewProcessor, raw_text: str, cafe_name: str, log_callback
+):
+    config = get_config()
 
-
-def validate_artifacts_and_write_quality_report():
-    errors = []
-
-    parsed_reviews = OUTPUT_DIR / "parsed_reviews.csv"
-    parsed_dishes = OUTPUT_DIR / "parsed_dishes.csv"
-    final_xlsx = OUTPUT_DIR / "ГОТОВАЯ_ТАБЛИЦА.xlsx"
-
-    for p in [parsed_reviews, parsed_dishes, final_xlsx]:
-        if not p.exists():
-            errors.append(f"Не найден артефакт: {p}")
-
-    if errors:
-        return False, errors, {}
-
-    review_rows = _read_csv_rows(parsed_reviews)
-    dish_rows = _read_csv_rows(parsed_dishes)
-
-    if not review_rows:
-        errors.append("parsed_reviews.csv пустой")
-    if not dish_rows:
-        errors.append("parsed_dishes.csv пустой")
-
-    clean_reviews = [
-        r for r in review_rows if str(r.get("is_noise", "")).strip().lower() != "true"
-    ]
-
-    total = len(review_rows)
-    clean = len(clean_reviews)
-    noise = total - clean
-
-    def pct(v, base):
-        return round((v / base) * 100, 2) if base else 0.0
-
-    empty_tonality = sum(
-        1 for r in clean_reviews if not str(r.get("tonality", "")).strip()
-    )
-    empty_review_tag = sum(
-        1 for r in clean_reviews if not str(r.get("review_tag", "")).strip()
-    )
-    empty_dish = sum(1 for r in clean_reviews if not str(r.get("dish", "")).strip())
-    mixed_count = sum(
-        1 for r in clean_reviews if str(r.get("tonality", "")).strip() == "Смешанный"
-    )
-
-    report = {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "files": {
-            "parsed_reviews_csv": str(parsed_reviews),
-            "parsed_dishes_csv": str(parsed_dishes),
-            "final_excel": str(final_xlsx),
-        },
-        "counts": {
-            "reviews_total": total,
-            "reviews_clean": clean,
-            "reviews_noise": noise,
-            "dish_mentions_total": len(dish_rows),
-        },
-        "quality": {
-            "empty_tonality_pct": pct(empty_tonality, clean),
-            "empty_review_tag_pct": pct(empty_review_tag, clean),
-            "empty_dish_pct": pct(empty_dish, clean),
-            "mixed_pct": pct(mixed_count, clean),
-        },
-        "status": "ok" if not errors else "error",
-        "errors": errors,
-    }
-
-    report_path = OUTPUT_DIR / "quality_report.json"
-    report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-    return len(errors) == 0, errors, report
-
-
-def run_pipeline(log_callback):
     log_callback("[1/3] Проверка папок и файлов...")
-    ensure_directories()
+    ensure_directories(config)
 
-    valid, error_text = validate_files_for_gui()
+    valid, error_text = validate_files_for_gui(config)
     if not valid:
         log_callback(error_text)
         return False
 
     log_callback("[2/3] Анализ и парсинг отзывов...")
-    parse_result = parse_reviews_main()
-    if parse_result != 0:
-        log_callback("Ошибка на этапе парсинга отзывов.")
+    try:
+        result = processor.process(raw_text, cafe_name)
+
+        if not result["success"]:
+            for err in result.get("errors", []):
+                log_callback(f"[ERROR] {err}")
+            return False
+
+        log_callback("Парсинг завершён успешно.")
+
+        # Сохраняем в CSV
+        processor.save_to_csv(result["review_rows"], result["dish_rows"])
+        log_callback("Данные сохранены в CSV.")
+
+        q = result["quality_report"].get("quality", {})
+        c = result["quality_report"].get("counts", {})
+        log_callback(
+            f"Quality: reviews_total={c.get('reviews_total', 0)}, "
+            f"clean={c.get('reviews_clean', 0)}, noise={c.get('reviews_noise', 0)}, "
+            f"empty_tonality={q.get('empty_tonality_pct', 0)}%, "
+            f"empty_review_tag={q.get('empty_review_tag_pct', 0)}%, "
+            f"empty_dish={q.get('empty_dish_pct', 0)}%, mixed={q.get('mixed_pct', 0)}%"
+        )
+
+        log_callback("")
+        log_callback("Обработка завершена успешно.")
+        log_callback(f"Результат лежит в папке:\n{config.output_dir}")
+        return True
+
+    except Exception as e:
+        log_callback(f"Критическая ошибка при обработке: {e}")
         return False
-    log_callback("Парсинг завершён успешно.")
-
-    log_callback("[3/3] Формирование Excel-файла...")
-    excel_result = load_reviews_to_excel_main()
-    if excel_result != 0:
-        log_callback("Ошибка на этапе формирования Excel.")
-        return False
-    log_callback("Excel-файл сформирован успешно.")
-
-    log_callback("[4/4] Валидация артефактов и quality report...")
-    ok, artifact_errors, report = validate_artifacts_and_write_quality_report()
-    if not ok:
-        for err in artifact_errors:
-            log_callback(f"[ARTIFACT] {err}")
-        return False
-
-    q = report.get("quality", {})
-    c = report.get("counts", {})
-    log_callback(
-        f"Quality: reviews_total={c.get('reviews_total', 0)}, "
-        f"clean={c.get('reviews_clean', 0)}, noise={c.get('reviews_noise', 0)}, "
-        f"empty_tonality={q.get('empty_tonality_pct', 0)}%, "
-        f"empty_review_tag={q.get('empty_review_tag_pct', 0)}%, "
-        f"empty_dish={q.get('empty_dish_pct', 0)}%, mixed={q.get('mixed_pct', 0)}%"
-    )
-
-    log_callback("")
-    log_callback("Обработка завершена успешно.")
-    log_callback(f"Результат лежит в папке:\n{OUTPUT_DIR}")
-    return True
 
 
 def main():
-    ensure_directories()
+    config = get_config()
+    ensure_directories(config)
 
     root = tk.Tk()
     root.title("Автоматическая обработка отзывов")
     root.geometry("1000x900")
     root.minsize(900, 700)
+
+    # Создаём процессор один раз
+    processor = ReviewProcessor()
 
     title_label = tk.Label(
         root,
@@ -250,12 +139,12 @@ def main():
     cafe_label = tk.Label(cafe_frame, text="Выберите кафе:", font=("Arial", 12, "bold"))
     cafe_label.pack(side="left")
 
-    selected_cafe = tk.StringVar(value=CAFE_OPTIONS[0])
+    selected_cafe = tk.StringVar(value=config.cafe_options[0])
 
     cafe_combobox = ttk.Combobox(
         cafe_frame,
         textvariable=selected_cafe,
-        values=CAFE_OPTIONS,
+        values=config.cafe_options,
         state="readonly",
         font=("Arial", 12),
         width=35,
@@ -323,8 +212,7 @@ def main():
 
         confirm = messagebox.askyesno(
             "Подтверждение",
-            f"Вы выбрали кафе:\n\n{cafe_name}\n\n"
-            "Продолжить обработку отзывов для этого кафе?",
+            f"Вы выбрали кафе:\n\n{cafe_name}\n\nПродолжить обработку отзывов для этого кафе?",
         )
         if not confirm:
             return
@@ -338,29 +226,27 @@ def main():
 
         try:
             set_buttons_state("disabled")
-
-            parse_reviews_module.CURRENT_CAFE = cafe_name
-
             log(f"Выбрано кафе: {cafe_name}")
             log("Сохраняем вставленный текст в raw_reviews.txt...")
-            save_input_text(raw_data)
-            log(f"Файл входных данных сохранён:\n{INPUT_FILE}")
+            save_input_text(config, raw_data)
+            log(f"Файл входных данных сохранён:\n{config.input_file}")
             log("")
 
-            success = run_pipeline(log)
+            success = run_pipeline(processor, raw_data, cafe_name, log)
 
             if success:
                 messagebox.showinfo(
                     "Готово",
                     "Обработка завершена успешно.\n\n"
                     f"Кафе: {cafe_name}\n"
-                    f"Результат лежит в папке:\n{OUTPUT_DIR}",
+                    f"Результат лежит в папке:\n{config.output_dir}",
                 )
+                # Открываем папку автоматически после успеха
+                open_output_folder(config)
             else:
                 messagebox.showerror(
                     "Ошибка",
-                    "Обработка завершилась с ошибкой.\n"
-                    "Подробности смотрите в поле лога.",
+                    "Обработка завершилась с ошибкой.\nПодробности смотрите в поле лога.",
                 )
 
         except Exception:
@@ -369,8 +255,7 @@ def main():
             log(error_details)
             messagebox.showerror(
                 "Критическая ошибка",
-                "Во время выполнения произошла ошибка.\n"
-                "Подробности смотрите в поле лога.",
+                "Во время выполнения произошла ошибка.\nПодробности смотрите в поле лога.",
             )
         finally:
             set_buttons_state("normal")
@@ -398,7 +283,7 @@ def main():
         text="Открыть папку с результатом",
         font=("Arial", 12),
         height=2,
-        command=open_output_folder,
+        command=lambda: open_output_folder(config),
     )
     open_folder_button.pack(side="left")
 
