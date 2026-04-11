@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 import subprocess
 
-# Новый импорт из нашего чистого ядра
+
 from core.processor import ReviewProcessor
 from core.config import get_config
 
@@ -77,7 +77,6 @@ def run_pipeline(
 
         log_callback("Парсинг завершён успешно.")
 
-        # Сохраняем в CSV
         processor.save_to_csv(result["review_rows"], result["dish_rows"])
         log_callback("Данные сохранены в CSV.")
 
@@ -110,7 +109,6 @@ def main():
     root.geometry("1000x900")
     root.minsize(900, 700)
 
-    # Создаём процессор один раз
     processor = ReviewProcessor()
 
     title_label = tk.Label(
@@ -241,7 +239,6 @@ def main():
                     f"Кафе: {cafe_name}\n"
                     f"Результат лежит в папке:\n{config.output_dir}",
                 )
-                # Открываем папку автоматически после успеха
                 open_output_folder(config)
             else:
                 messagebox.showerror(

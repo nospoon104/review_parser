@@ -19,33 +19,17 @@ class ReviewProcessor:
             self.current_cafe = cafe_name
 
     def process(self, raw_text: str, cafe_name: str | None = None) -> Dict[str, Any]:
+        print("DEBUG raw_text length:", len(raw_text))
+        print("DEBUG raw_text preview:", raw_text[:300])
         if cafe_name:
             self.set_cafe(cafe_name)
 
-        # Импортируем модуль внутри метода — это ломает цикл
         import scripts.parse_reviews as parse_module
 
-        parse_module.CURRENT_CAFE = self.current_cafe
-
-        # Вызываем старый main()
-        exit_code = parse_module.main()
-
-        # Читаем то, что создал старый парсер
-        review_rows = []
-        dish_rows = []
-
-        reviews_path = self.config.output_dir / "parsed_reviews.csv"
-        dishes_path = self.config.output_dir / "parsed_dishes.csv"
-
-        if reviews_path.exists():
-            with open(reviews_path, "r", encoding="utf-8-sig", newline="") as f:
-                reader = csv.DictReader(f)
-                review_rows = list(reader)
-
-        if dishes_path.exists():
-            with open(dishes_path, "r", encoding="utf-8-sig", newline="") as f:
-                reader = csv.DictReader(f)
-                dish_rows = list(reader)
+        review_rows, dish_rows = parse_module.parse_raw_text(
+            raw_text, self.current_cafe
+        )
+        parse_module.save_parsed_to_csv(review_rows, dish_rows, self.config.output_dir)
 
         success, errors, report = self._create_quality_report(review_rows, dish_rows)
 
@@ -111,5 +95,6 @@ class ReviewProcessor:
         return True, [], report
 
     def save_to_csv(self, review_rows: List[Dict], dish_rows: List[Dict]) -> None:
-        # Уже сохранено старым main(), ничего не делаем
-        pass
+        import scripts.parse_reviews as parse_module
+
+        parse_module.save_parsed_to_csv(review_rows, dish_rows, self.config.output_dir)
