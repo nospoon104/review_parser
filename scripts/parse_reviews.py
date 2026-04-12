@@ -51,8 +51,6 @@ def parse_raw_text(
 
     primary_blocks = split_messages(raw_text)
 
-    # fallback: если telegram split не помог, режем по pseudo-header
-    # и по строкам старта отзывов типа "105, ..." / "Стол 105, ..."
     if len(primary_blocks) <= 1:
         fallback_blocks = split_fallback_review_blocks(raw_text)
         if len(fallback_blocks) > 1:
@@ -60,10 +58,11 @@ def parse_raw_text(
         else:
             message_blocks = primary_blocks
     else:
+        fallback_blocks = []
         message_blocks = primary_blocks
 
-    # если всё ещё один блок, но внутри есть поток отзывов по столам,
-    # пробуем сразу parse_chat_body
+    used_fallback_blocks = len(fallback_blocks) > 1
+
     if len(message_blocks) == 1 and (
         looks_like_plain_table_dump(raw_text)
         or looks_like_table_review_stream(raw_text)
@@ -96,7 +95,11 @@ def parse_raw_text(
                 dish_rows.append(drow)
 
         else:
-            if looks_like_plain_table_dump(block) or looks_like_table_review_stream(
+            if used_fallback_blocks or is_review_start_line(block.strip()):
+                extra_review_rows, extra_dish_rows = parse_chat_body(block)
+                review_rows.extend(extra_review_rows)
+                dish_rows.extend(extra_dish_rows)
+            elif looks_like_plain_table_dump(block) or looks_like_table_review_stream(
                 block
             ):
                 extra_review_rows, extra_dish_rows = parse_chat_body(block)
