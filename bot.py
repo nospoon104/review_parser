@@ -117,7 +117,7 @@ async def process_reviews_request(
 
     if len(raw_text) > config.max_text_length:
         await update.message.reply_text(
-            "📦 Текст слишком большой для безопасной обработки сообщением. Лучше пришлите его .txt файлом.",
+            "📦 Текст слишком большой для безопасной обработки сообщением. Лучше пришлите его .txt файлом. \nДля этого откройте блокнот на вашем компьютере, вставьте туда отзывы, сохраните файл и отправьте боту",
             reply_markup=MAIN_MENU,
         )
         return
@@ -156,7 +156,7 @@ async def process_reviews_request(
         await update.message.reply_text(
             f"🔄 Обрабатываю отзывы для {cafe}...\n"
             f"Задача: {job_dir.name}\n"
-            f"Это может занять 15–25 секунд.",
+            f"Это может занять до 5 минут.",
             reply_markup=MAIN_MENU,
         )
 
@@ -171,8 +171,7 @@ async def process_reviews_request(
                 f"Кафе: {cafe}\n"
                 f"Всего отзывов: {q.get('reviews_total', 0)}\n"
                 f"Полезных: {q.get('reviews_clean', 0)}\n"
-                f"Отфильтровано шума: {q.get('reviews_noise', 0)}\n"
-                f"Папка задачи: {job_dir.name}",
+                f"Отфильтровано шума: {q.get('reviews_noise', 0)}\n",
                 reply_markup=MAIN_MENU,
             )
 

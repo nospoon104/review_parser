@@ -54,33 +54,47 @@ def parse_raw_text(
     CURRENT_CAFE = cafe_name
 
     raw_text = normalize_spaces(raw_text)
-    message_blocks = split_messages(raw_text)
 
     review_rows = []
     dish_rows = []
 
+    message_blocks = split_messages(raw_text)
+
+    # Если telegram-заголовки не найдены, но текст похож на plain table dump
+    if len(message_blocks) == 1 and looks_like_plain_table_dump(raw_text):
+        extra_review_rows, extra_dish_rows = parse_chat_body(raw_text)
+        review_rows.extend(extra_review_rows)
+        dish_rows.extend(extra_dish_rows)
+        return review_rows, dish_rows
+
     for block in message_blocks:
         parsed = parse_message_block(block)
-        if not parsed:
-            continue
 
-        author = parsed["author"]
-        body = parsed["body"]
+        if parsed:
+            author = parsed["author"]
+            body = parsed["body"]
 
-        if author == "GastroReview":
-            extra_review_rows, extra_dish_rows = parse_aggregator_body(body)
+            if author == "GastroReview":
+                extra_review_rows, extra_dish_rows = parse_aggregator_body(body)
+            else:
+                extra_review_rows, extra_dish_rows = parse_chat_body(body)
+
+            for row in extra_review_rows:
+                if not row["date"]:
+                    row["date"] = parsed["review_date"]
+                review_rows.append(row)
+
+            for drow in extra_dish_rows:
+                if not drow["date"]:
+                    drow["date"] = parsed["review_date"]
+                dish_rows.append(drow)
+
         else:
-            extra_review_rows, extra_dish_rows = parse_chat_body(body)
-
-        for row in extra_review_rows:
-            if not row["date"]:
-                row["date"] = parsed["review_date"]
-            review_rows.append(row)
-
-        for drow in extra_dish_rows:
-            if not drow["date"]:
-                drow["date"] = parsed["review_date"]
-            dish_rows.append(drow)
+            # fallback: блок без telegram-header, но похож на table-dump
+            if looks_like_plain_table_dump(block):
+                extra_review_rows, extra_dish_rows = parse_chat_body(block)
+                review_rows.extend(extra_review_rows)
+                dish_rows.extend(extra_dish_rows)
 
     return review_rows, dish_rows
 
@@ -209,6 +223,30 @@ def phrase_in_text(text: str, phrase: str) -> bool:
     escaped = re.escape(phrase_n)
     pattern = rf"(?<![а-яa-z0-9]){escaped}(?![а-яa-z0-9])"
     return re.search(pattern, text_n, re.IGNORECASE) is not None
+
+
+def looks_like_plain_table_dump(text: str) -> bool:
+    # они не остановтяся находить новые способы копирования ОС, боже мой...
+    if not text or not text.strip():
+        return False
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False
+
+    table_header_count = 0
+
+    patterns = [
+        r"^\s*Стол\s*\d{1,4}\s*:?\s*$",
+        r"^\s*\d{1,4}\s*стол\s*:?\s*$",
+        r"^\s*\d{1,4}\s*:?\s*$",
+    ]
+
+    for line in lines:
+        if any(re.match(p, line, re.IGNORECASE) for p in patterns):
+            table_header_count += 1
+
+    return table_header_count >= 2
 
 
 def split_messages(text: str) -> List[str]:
@@ -345,10 +383,10 @@ def split_chat_into_subreviews(body: str) -> List[str]:
     blocks = []
     current_block = []
 
-    table_only_pattern = re.compile(r"^\s*\d{2,4}\s*$")
+    table_only_pattern = re.compile(r"^\s*\d{2,4}\s*:?\s*$")
     table_with_text_pattern = re.compile(r"^\s*\d{2,4}\b")
     explicit_table_pattern = re.compile(
-        r"^\s*(?:Стол\s*\d{2,4}\b|\d{2,4}\s*стол\b|\d{2,4}\s*,)",
+        r"^\s*(?:Стол\s*\d{1,4}\b|\d{1,4}\s*стол\b|\d{1,4}\s*,|\d{1,4}\s*:)",
         re.IGNORECASE,
     )
 
@@ -394,19 +432,20 @@ def extract_table_number(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if lines:
         first_line = lines[0]
-        if re.fullmatch(r"\d{2,4}", first_line):
-            return first_line
+        if re.fullmatch(r"\d{1,4}\s*:?", first_line):
+            return re.sub(r"\D", "", first_line)
 
-        match = re.match(r"^(\d{2,4})\b", first_line)
+        match = re.match(r"^(?:Стол\s*)?(\d{1,4})\b", first_line, re.IGNORECASE)
         if match:
             return match.group(1)
 
     # 2. Явные форматы "Стол 223" / "223 стол"
     patterns = [
-        r"\bСтол\s*(\d{2,4})\b",
-        r"\bстол\s*(\d{2,4})\b",
-        r"\b(\d{2,4})\s*стол\b",
-        r"^\s*(\d{2,4})[,\s.]",
+        r"\bСтол\s*(\d{1,4})\b",
+        r"\bстол\s*(\d{1,4})\b",
+        r"\b(\d{1,4})\s*стол\b",
+        r"^\s*(\d{1,4})\s*[:.,]",
+        r"^\s*(\d{1,4})\b",
     ]
 
     for pattern in patterns:
