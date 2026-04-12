@@ -1,14 +1,12 @@
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
-import csv
 import json
 from datetime import datetime
-
 from .config import get_config
 
 
 class ReviewProcessor:
-    """Главный класс-оркестратор."""
+    """Главный класс-оркестратор.cac"""
 
     def __init__(self):
         self.config = get_config()
@@ -18,20 +16,28 @@ class ReviewProcessor:
         if cafe_name in self.config.cafe_options:
             self.current_cafe = cafe_name
 
-    def process(self, raw_text: str, cafe_name: str | None = None) -> Dict[str, Any]:
-        print("DEBUG raw_text length:", len(raw_text))
-        print("DEBUG raw_text preview:", raw_text[:300])
+    def process(
+        self,
+        raw_text: str,
+        cafe_name: str | None = None,
+        output_dir: Path | None = None,
+    ) -> Dict[str, Any]:
         if cafe_name:
             self.set_cafe(cafe_name)
+
+        if output_dir is None:
+            output_dir = self.config.output_dir
 
         import scripts.parse_reviews as parse_module
 
         review_rows, dish_rows = parse_module.parse_raw_text(
             raw_text, self.current_cafe
         )
-        parse_module.save_parsed_to_csv(review_rows, dish_rows, self.config.output_dir)
+        parse_module.save_parsed_to_csv(review_rows, dish_rows, output_dir)
 
-        success, errors, report = self._create_quality_report(review_rows, dish_rows)
+        success, errors, report = self._create_quality_report(
+            review_rows, dish_rows, output_dir
+        )
 
         return {
             "success": success,
@@ -40,10 +46,14 @@ class ReviewProcessor:
             "quality_report": report,
             "errors": errors,
             "cafe": self.current_cafe,
+            "output_dir": output_dir,
         }
 
     def _create_quality_report(
-        self, review_rows: List[Dict], dish_rows: List[Dict]
+        self,
+        review_rows: List[Dict],
+        dish_rows: List[Dict],
+        output_dir: Path,
     ) -> Tuple[bool, List[str], Dict]:
         clean = [r for r in review_rows if str(r.get("is_noise", "")).lower() != "true"]
         total = len(review_rows)
@@ -88,13 +98,22 @@ class ReviewProcessor:
             "errors": [],
         }
 
-        self.config.output_dir.mkdir(exist_ok=True)
-        (self.config.output_dir / "quality_report.json").write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "quality_report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
         return True, [], report
 
-    def save_to_csv(self, review_rows: List[Dict], dish_rows: List[Dict]) -> None:
+    def save_to_csv(
+        self,
+        review_rows: List[Dict],
+        dish_rows: List[Dict],
+        output_dir: Path | None = None,
+    ) -> None:
+        if output_dir is None:
+            output_dir = self.config.output_dir
+
         import scripts.parse_reviews as parse_module
 
-        parse_module.save_parsed_to_csv(review_rows, dish_rows, self.config.output_dir)
+        parse_module.save_parsed_to_csv(review_rows, dish_rows, output_dir)

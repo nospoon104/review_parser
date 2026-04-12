@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
-
-print("DEBUG BOT FILE:", Path(__file__).resolve())
-print("DEBUG CWD:", Path.cwd())
-print("DEBUG PYTHON:", sys.executable)
-
 import asyncio
 import os
-from dotenv import load_dotenv
+import traceback
 
+from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
@@ -21,7 +17,12 @@ from telegram.ext import (
 
 from core.config import get_config
 from core.processor import ReviewProcessor
-from scripts.load_reviews_to_excel import main as run_excel_converter
+from core.jobs import create_job_dir, save_job_meta
+from scripts.load_reviews_to_excel import build_excel_from_dir
+
+print("DEBUG BOT FILE:", Path(__file__).resolve())
+print("DEBUG CWD:", Path.cwd())
+print("DEBUG PYTHON:", sys.executable)
 
 config = get_config()
 processor = ReviewProcessor()
@@ -48,7 +49,7 @@ def build_cafe_menu():
     rows = []
     for cafe in config.cafe_options:
         rows.append([KeyboardButton(f"🏪 {cafe}")])
-    rows.append([KeyboardButton("⬅️ В меню")])
+    rows.append([KeyboardButton("⬅ В меню")])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
@@ -81,10 +82,14 @@ async def show_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    config.jobs_dir.mkdir(parents=True, exist_ok=True)
+    jobs_dir = config.jobs_dir
+
     text = (
         f"📊 Текущий статус\n\n"
         f"Активное кафе: {processor.current_cafe}\n"
-        f"Папка с результатами:\n{config.output_dir}"
+        f"Папка результатов по умолчанию:\n{config.output_dir}\n\n"
+        f"Папка задач:\n{jobs_dir}"
     )
     await update.message.reply_text(text, reply_markup=MAIN_MENU)
 
@@ -94,6 +99,105 @@ async def show_cafe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🏪 Выберите кафе:",
         reply_markup=build_cafe_menu(),
     )
+
+
+async def process_reviews_request(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    raw_text: str,
+    source_type: str,
+    original_filename: str | None = None,
+):
+    if len(raw_text) < 40:
+        await update.message.reply_text(
+            "📏 Слишком мало текста. Пришлите минимум 8–10 отзывов одним сообщением или .txt файлом.",
+            reply_markup=MAIN_MENU,
+        )
+        return
+
+    if len(raw_text) > config.max_text_length:
+        await update.message.reply_text(
+            "📦 Текст слишком большой для безопасной обработки сообщением. Лучше пришлите его .txt файлом.",
+            reply_markup=MAIN_MENU,
+        )
+        return
+
+    if processing_lock.locked():
+        await update.message.reply_text(
+            "⏳ Бот уже обрабатывает предыдущий запрос. Пожалуйста, подождите.",
+            reply_markup=MAIN_MENU,
+        )
+        return
+
+    async with processing_lock:
+        cafe = processor.current_cafe
+        user = update.effective_user
+        chat = update.effective_chat
+
+        config.jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_dir = create_job_dir(config.jobs_dir, cafe, user.id)
+
+        (job_dir / "input.txt").write_text(raw_text, encoding="utf-8")
+
+        save_job_meta(
+            job_dir,
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "full_name": user.full_name,
+                "chat_id": chat.id,
+                "source_type": source_type,
+                "original_filename": original_filename,
+                "cafe": cafe,
+                "job_dir": str(job_dir),
+            },
+        )
+
+        await update.message.reply_text(
+            f"🔄 Обрабатываю отзывы для {cafe}...\n"
+            f"Задача: {job_dir.name}\n"
+            f"Это может занять 15–25 секунд.",
+            reply_markup=MAIN_MENU,
+        )
+
+        try:
+            result = processor.process(raw_text, cafe, output_dir=job_dir)
+            q = result.get("quality_report", {}).get("counts", {})
+
+            excel_file = build_excel_from_dir(job_dir)
+
+            await update.message.reply_text(
+                f"✅ Обработка завершена\n\n"
+                f"Кафе: {cafe}\n"
+                f"Всего отзывов: {q.get('reviews_total', 0)}\n"
+                f"Полезных: {q.get('reviews_clean', 0)}\n"
+                f"Отфильтровано шума: {q.get('reviews_noise', 0)}\n"
+                f"Папка задачи: {job_dir.name}",
+                reply_markup=MAIN_MENU,
+            )
+
+            if excel_file.exists():
+                with open(excel_file, "rb") as f:
+                    await context.bot.send_document(
+                        chat_id=chat.id,
+                        document=f,
+                        filename="ГОТОВАЯ_ТАБЛИЦА.xlsx",
+                        caption=f"Готовая таблица для {cafe}",
+                    )
+            else:
+                await update.message.reply_text(
+                    "⚠️ Не удалось создать Excel-файл.",
+                    reply_markup=MAIN_MENU,
+                )
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            (job_dir / "error.txt").write_text(tb, encoding="utf-8")
+
+            await update.message.reply_text(
+                f"🚨 Ошибка при обработке:\n{e}\n\nЗадача: {job_dir.name}",
+                reply_markup=MAIN_MENU,
+            )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,74 +234,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    if len(text) < 40:
-        await update.message.reply_text(
-            "📏 Слишком мало текста. Пришлите минимум 8–10 отзывов одним сообщением или .txt файлом.",
-            reply_markup=MAIN_MENU,
-        )
-        return
-
-    if processing_lock.locked():
-        await update.message.reply_text(
-            "⏳ Бот уже обрабатывает предыдущий запрос. Пожалуйста, подождите.",
-            reply_markup=MAIN_MENU,
-        )
-        return
-
-    async with processing_lock:
-        cafe = processor.current_cafe
-
-        await update.message.reply_text(
-            f"🔄 Обрабатываю отзывы для {cafe}...\nЭто может занять 15–25 секунд.",
-            reply_markup=MAIN_MENU,
-        )
-
-        try:
-            result = processor.process(text, cafe)
-            q = result.get("quality_report", {}).get("counts", {})
-
-            await update.message.reply_text(
-                f"✅ Обработка завершена\n\n"
-                f"Кафе: {cafe}\n"
-                f"Всего отзывов: {q.get('reviews_total', 0)}\n"
-                f"Полезных: {q.get('reviews_clean', 0)}\n"
-                f"Отфильтровано шума: {q.get('reviews_noise', 0)}",
-                reply_markup=MAIN_MENU,
-            )
-
-            run_excel_converter()
-            excel_file = config.output_dir / "ГОТОВАЯ_ТАБЛИЦА.xlsx"
-
-            if excel_file.exists():
-                with open(excel_file, "rb") as f:
-                    await context.bot.send_document(
-                        chat_id=update.effective_chat.id,
-                        document=f,
-                        filename="ГОТОВАЯ_ТАБЛИЦА.xlsx",
-                        caption=f"Готовая таблица для {cafe}",
-                    )
-            else:
-                await update.message.reply_text(
-                    "⚠️ Не удалось создать Excel-файл.",
-                    reply_markup=MAIN_MENU,
-                )
-
-        except Exception as e:
-            await update.message.reply_text(
-                f"🚨 Ошибка при обработке:\n{e}",
-                reply_markup=MAIN_MENU,
-            )
+    await process_reviews_request(
+        update=update,
+        context=context,
+        raw_text=text,
+        source_type="text",
+    )
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if processing_lock.locked():
-        await update.message.reply_text(
-            "⏳ Бот уже обрабатывает предыдущий запрос. Пожалуйста, подождите.",
-            reply_markup=MAIN_MENU,
-        )
-        return
-
     document = update.message.document
+
     if not document or not document.file_name.lower().endswith(".txt"):
         await update.message.reply_text(
             "Пришлите .txt файл с отзывами.",
@@ -205,48 +252,48 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    async with processing_lock:
-        cafe = processor.current_cafe
-        status_msg = await update.message.reply_text(
-            f"🔄 Загружаю и обрабатываю файл для {cafe}...",
+    if document.file_size and document.file_size > config.max_file_size_bytes:
+        await update.message.reply_text(
+            "📦 Файл слишком большой. Разбейте его или сократите содержимое.",
             reply_markup=MAIN_MENU,
         )
+        return
+
+    try:
+        file = await document.get_file()
+        file_bytes = await file.download_as_bytearray()
 
         try:
-            file = await document.get_file()
-            file_bytes = await file.download_as_bytearray()
             raw_text = file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                raw_text = file_bytes.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raw_text = file_bytes.decode("cp1251")
 
-            result = processor.process(raw_text, cafe)
-            q = result.get("quality_report", {}).get("counts", {})
+    except Exception as e:
+        await update.message.reply_text(
+            f"🚨 Не удалось прочитать файл:\n{e}",
+            reply_markup=MAIN_MENU,
+        )
+        return
 
-            await update.message.reply_text(
-                f"✅ Обработка завершена\n\n"
-                f"Кафе: {cafe}\n"
-                f"Всего отзывов: {q.get('reviews_total', 0)}\n"
-                f"Полезных: {q.get('reviews_clean', 0)}\n"
-                f"Отфильтровано шума: {q.get('reviews_noise', 0)}"
-            )
+    await process_reviews_request(
+        update=update,
+        context=context,
+        raw_text=raw_text,
+        source_type="document",
+        original_filename=document.file_name,
+    )
 
-            run_excel_converter()
-            excel_file = config.output_dir / "ГОТОВАЯ_ТАБЛИЦА.xlsx"
 
-            if excel_file.exists():
-                with open(excel_file, "rb") as f:
-                    await context.bot.send_document(
-                        chat_id=update.effective_chat.id,
-                        document=f,
-                        filename="ГОТОВАЯ_ТАБЛИЦА.xlsx",
-                        caption=f"Готовая таблица для {cafe}",
-                    )
-            else:
-                await update.message.reply_text(
-                    "⚠️ Не удалось создать Excel-файл.",
-                    reply_markup=MAIN_MENU,
-                )
-
-        except Exception as e:
-            await update.message.reply_text(f"🚨 Ошибка при обработке:\n{e}")
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    print("Exception while handling update:")
+    traceback.print_exception(
+        type(context.error),
+        context.error,
+        context.error.__traceback__,
+    )
 
 
 def main():
@@ -255,9 +302,12 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_error_handler(error_handler)
 
     print("🤖 Бот запущен")
     print(f"Активное кафе: {processor.current_cafe}")
+    config.jobs_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Jobs dir: {config.jobs_dir}")
     app.run_polling()
 
 

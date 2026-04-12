@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Final
+from typing import Dict, List
 from dataclasses import dataclass
 
 
@@ -9,6 +9,7 @@ class AppConfig:
     input_dir: Path
     output_dir: Path
     template_dir: Path
+    jobs_dir: Path
 
     input_file: Path
     template_file: Path
@@ -28,6 +29,9 @@ class AppConfig:
     month_map: Dict[str, str]
     typo_map: Dict[str, str]
 
+    max_text_length: int
+    max_file_size_bytes: int
+
     @classmethod
     def create(cls) -> "AppConfig":
         base_dir = Path(__file__).resolve().parent.parent
@@ -36,6 +40,7 @@ class AppConfig:
             input_dir=base_dir / "ПОЛОЖИТЬ_СЮДА_ФАЙЛ_С_ОТЗЫВАМИ",
             output_dir=base_dir / "ГОТОВЫЙ_РЕЗУЛЬТАТ",
             template_dir=base_dir / "ШАБЛОН_НЕ_ТРОГАТЬ",
+            jobs_dir=base_dir / "jobs",
             input_file=base_dir / "ПОЛОЖИТЬ_СЮДА_ФАЙЛ_С_ОТЗЫВАМИ" / "raw_reviews.txt",
             template_file=base_dir / "ШАБЛОН_НЕ_ТРОГАТЬ" / "feedback_template.xlsx",
             cafe_options=[
@@ -581,6 +586,8 @@ class AppConfig:
                 "овчека": "овечка",
                 "запечони": "запеченные",
             },
+            max_text_length=120_000,
+            max_file_size_bytes=2 * 1024 * 1024,
         )
 
 
@@ -588,7 +595,6 @@ _config_instance: AppConfig | None = None
 
 
 def get_config() -> AppConfig:
-    """Возвращает экземпляр конфига. Используй вместо глобальных BASE_DIR и т.д."""
     global _config_instance
     if _config_instance is None:
         _config_instance = AppConfig.create()
