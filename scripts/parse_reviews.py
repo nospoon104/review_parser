@@ -14,6 +14,9 @@ from scripts.catalogs import (
 
 from core.config import get_config
 
+print("=== PARSE_REVIEWS IMPORTED V2026-04-12-01 ===")
+print(f"PARSE_REVIEWS_FILE={__file__}")
+
 config = get_config()
 
 
@@ -41,6 +44,9 @@ def get_base_dir():
 def parse_raw_text(
     raw_text: str, cafe_name: str
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    print("=== parse_raw_text CALLED V2026-04-12-01 ===")
+    print(f"parse_raw_text file={__file__}")
+    print(f"input_len={len(raw_text)}")
     global CURRENT_CAFE
     CURRENT_CAFE = cafe_name
 
