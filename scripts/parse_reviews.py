@@ -12,6 +12,10 @@ from scripts.catalogs import (
     FALLBACK_DISH_TAG_BY_NAME_KEYWORDS,
 )
 
+from core.config import get_config
+
+config = get_config()
+
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -27,530 +31,113 @@ OUTPUT_DISHES_CSV = OUTPUT_DIR / "parsed_dishes.csv"
 
 CURRENT_CAFE = "АндерСон Таганская 36"
 
-POSITIVE_MARKERS = [
-    "вкусно",
-    "очень вкусно",
-    "безумно вкусно",
-    "все вкусно",
-    "всё вкусно",
-    "все было вкусно",
-    "всё было вкусно",
-    "понравилось",
-    "очень понравилось",
-    "понравился",
-    "понравилась",
-    "понравились",
-    "супер",
-    "отлично",
-    "прекрасно",
-    "замечательно",
-    "восхитительно",
-    "идеально",
-    "классно",
-    "круто",
-    "молодцы",
-    "молодец",
-    "на высоте",
-    "топ",
-    "огонь",
-    "гости довольны",
-    "гость доволен",
-    "все довольны",
-    "всё понравилось",
-    "все понравилось",
-    "всем довольны",
-    "остались довольны",
-    "в восторге",
-    "быстро",
-    "быстро принесли",
-    "быстрая подача",
-    "оперативно",
-    "ждать не пришлось",
-    "не пришлось ждать",
-    "долго ждать не пришлось",
-    "долго ждать не приходится",
-    "не приходится ждать",
-    "ждать не приходится",
-    "уютно",
-    "приятно",
-    "комфортно",
-    "атмосферно",
-    "приятная атмосфера",
-    "потрясающее место",
-    "любимое место",
-    "хорошее место",
-    "приятное место",
-    "вежливо",
-    "вежливый",
-    "вежливая",
-    "доброжелательно",
-    "приветливо",
-    "внимательно",
-    "заботливо",
-    "хорошее обслуживание",
-    "отличный сервис",
-    "удобно",
-    "очень удобно",
-    "огромный плюс",
-    "большой плюс",
-    "классные аниматоры",
-    "хорошая игровая",
-    "детям понравилось",
-    "рекомендуем",
-    "рекомендую",
-    "однозначно рекомендую",
-    "вернемся",
-    "вернёмся",
-    "придем еще",
-    "придём ещё",
-    "вкусный",
-    "вкусная",
-    "вкусное",
-    "вкусные",
-    "хороший",
-    "хорошая",
-    "хорошее",
-    "хорошие",
-    "лучше чем обычно",
-    "хорошо",
-    "превосходно",
-    "потрясающе",
-    "мега вайб",
-    "супер вайб",
-    "вообще вайб",
-    "крутой вайб",
-    "все зашло",
-    "на ура",
-    "доволен",
-    "довольна",
-    "довольны",
-    "чудесные",
-    "чудесно",
-    "чудесная",
-    "чудесный",
-    "превосходный",
-    "превосходное",
-    "превосходная",
-    "превосходные",
-    "вау",
-    "очень хвалили",
-    "очень хвалил",
-    "очень хвалила",
-    "хвалит",
-    "что надо",
-    "то что надо" "превосходны",
-]
 
-NEGATIVE_MARKERS = [
-    "не вкусно",
-    "невкусно",
-    "не вкусная",
-    "не вкусный",
-    "не вкусные",
-    "вообще не вкус",
-    "совсем не вкус",
-    "есть невозможно",
-    "есть не возможно",
-    "невозможно есть",
-    "не понравилось",
-    "не понравился",
-    "не понравились",
-    "не понравилась",
-    "не зашло",
-    "ужасно",
-    "отвратительно",
-    "отвратительный",
-    "отвратительная",
-    "отвратительное",
-    "кошмар",
-    "так себе",
-    "плохо",
-    "очень плохо",
-    "не очень",
-    "разочаровал",
-    "разочаровало",
-    "сырой",
-    "сырая",
-    "сырое",
-    "недожарен",
-    "недожарена",
-    "недожарено",
-    "недоварен",
-    "недоварена",
-    "недоварено",
-    "подгорел",
-    "подгорело",
-    "пересолен",
-    "пересолено",
-    "слишком солен",
-    "слишком солёный",
-    "безвкусно",
-    "пресно",
-    "сухой",
-    "сухая",
-    "сухое",
-    "жесткий",
-    "жёсткий",
-    "жёсткая",
-    "жесткая",
-    "жёсткое",
-    "жесткое",
-    "водянистый",
-    "водянистая",
-    "водянситое",
-    "жестковато",
-    "жёстковато",
-    "резиновый",
-    "резиновая",
-    "резиновое",
-    "хрустят",
-    "кислый",
-    "кислая",
-    "кислое",
-    "горчит",
-    "горький",
-    "горькая",
-    "холодный",
-    "холодная",
-    "холодное",
-    "остывший",
-    "остывшая",
-    "остывшее",
-    "передержали",
-    "разваренные",
-    "разварен",
-    "много соли",
-    "мало соли",
-    "долго",
-    "очень долго",
-    "долго несли",
-    "долго ждали",
-    "долго ждал",
-    "долго ждала",
-    "ждали долго",
-    "обслуживали долго",
-    "слишком долго",
-    "очень долгое ожидание",
-    "ждали",
-    "задержали",
-    "не подходили",
-    "не обращали внимания",
-    "забыли",
-    "перепутали",
-    "не принесли",
-    "не вынесли",
-    "не подали",
-    "не доставили",
-    "не доложили",
-    "не привезли",
-    "нет части заказа",
-    "не учли комментарий",
-    "не тот заказ",
-    "перепутали заказ",
-    "без приборов",
-    "без салфеток",
-    "ни единой салфетки",
-    "упаковка порвана",
-    "упаковка протекла",
-    "все пролилось",
-    "всё пролилось",
-    "грязно",
-    "грязный",
-    "грязная",
-    "грязное",
-    "мусор",
-    "липкий стол",
-    "не убрано",
-    "неприятно пахнет",
-    "воняет",
-    "не прошли бонусы",
-    "не приходит код",
-    "не пришел код",
-    "не пришёл код",
-    "не работает приложение",
-    "не работает сайт",
-    "не грузит",
-    "не загружается",
-    "не списались бонусы",
-    "не начислились бонусы",
-    "стола нет",
-    "нет стола",
-    "не готово",
-    "не забронировано",
-    "разную информацию",
-    "дезинформация",
-    "я не знаю",
-    "никто не знает",
-    "не решает проблем",
-    "ломающейся коммуникацией",
-    "нервотрепкой",
-    "нервотрепка",
-    "сложно назвать организацией",
-    "организация хромает",
-    "отравление",
-    "плохо стало",
-    "тошнит",
-    "болит живот",
-    "отравились",
-    "аллергия",
-    "инородный предмет",
-    "волос",
-    "стекло",
-    "осколок",
-    "пластик",
-    "кусок упаковки",
-    "хромает",
-    "никакой",
-    "ни о чём",
-    "можно обжечься",
-    "слишком горячее",
-    "обжегся",
-    "обожглась",
-    "обожглись",
-    "очень горячее",
-    "слишком горячая",
-    "слишком горячий",
-    "не достаточно горячий",
-    "не достаточно горячая",
-    "недостаточно горячий",
-    "недостаточно горячая",
-    "не достаточно горячее",
-    "недостаточно горячее",
-]
+def get_base_dir():
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
-MIXED_MARKERS = [
-    "но",
-    "однако",
-    "при этом",
-    "в целом",
-    "в общем",
-    "единственное",
-    "из минусов",
-    "из плюсов",
-    "с одной стороны",
-    "с другой стороны",
-    "мнение разделились",
-    "один говорит",
-    "другой говорит",
-    "отец говорит",
-    "дочь утверждает",
-    "вкусно, но",
-    "хорошо, но",
-    "понравилось, но",
-    "в целом хорошо, но",
-    "неплохо, но",
-    "лишнее",
-    "лишний",
-    "лишняя",
-    "странный",
-    "странное",
-    "странная",
-    "привкус",
-    "странное сочетание",
-    "странные сочетания",
-    "не достаточно горячий",
-    "не достаточно тёплый",
-    "лучше бы",
-]
 
-SERVICE_RECOVERY_MARKERS = [
-    "извинились",
-    "извинилась",
-    "принесли извинения",
-    "убрали из счета",
-    "убрали из счёта",
-    "не взяли в счет",
-    "не взяли в счёт",
-    "заменили",
-    "переделали",
-    "дожарили",
-    "доготовили",
-    "вернули деньги",
-    "сделали скидку",
-    "предложили десерт",
-    "дали комплимент",
-    "в комплимент",
-    "угостили",
-    "компенсировали",
-]
+BASE_DIR = get_base_dir()
+INPUT_FILE = BASE_DIR / "ПОЛОЖИТЬ_СЮДА_ФАЙЛ_С_ОТЗЫВАМИ" / "raw_reviews.txt"
+OUTPUT_DIR = BASE_DIR / "ГОТОВЫЙ_РЕЗУЛЬТАТ"
+OUTPUT_CSV = OUTPUT_DIR / "parsed_reviews.csv"
+OUTPUT_DISHES_CSV = OUTPUT_DIR / "parsed_dishes.csv"
 
-NEGATIVE_EXCEPTIONS = [
-    "долго ждать не приходится",
-    "ждать не приходится",
-    "не приходится ждать",
-    "не пришлось долго ждать",
-    "ждать не пришлось",
-    "долго ждать не пришлось",
-    "без проблем",
-    "никаких проблем",
-    "проблем не было",
-    "никаких нареканий",
-    "вопросов нет",
-    "все прошло хорошо",
-    "всё прошло хорошо",
-    "все было отлично",
-    "всё было отлично",
-    "несмотря на полную посадку, быстро",
-    "несмотря на полную посадку быстро",
-]
+CURRENT_CAFE = "АндерСон Таганская 36"
 
-REVIEW_KEYWORDS = [
-    "гость",
-    "гости",
-    "гостю",
-    "гостям",
-    "заказ",
-    "блюдо",
-    "еда",
-    "напиток",
-    "доставка",
-    "официант",
-    "администратор",
-    "аниматор",
-    "игровая",
-    "зал",
-    "атмосфера",
-    "обслуживание",
-    "кухня",
-    "бонусы",
-    "промокод",
-    "код",
-    "сайт",
-    "упаковка",
-    "приборы",
-    "салфетки",
-    "пицца",
-    "бургер",
-    "боул",
-    "омлет",
-    "котлеты",
-    "наггитсы",
-    "суп",
-    "борщ",
-    "салат",
-    "паста",
-    "рис",
-    "авокадо",
-    "грибы",
-    "ростбиф",
-    "вода",
-    "кофе",
-    "чай",
-    "десерт",
-    "торт",
-    "роллы",
-    "шашлык",
-    "стейк",
-    "картошка",
-]
 
-NOISE_KEYWORDS = [
-    "коллеги",
-    "команда",
-    "ребята",
-    "друзья",
-    "давайте",
-    "нужно",
-    "надо",
-    "важно",
-    "обязательно",
-    "сюда пишем",
-    "сюда прописываем",
-    "заполняйте",
-    "отмечайте",
-    "в таблицу",
-    "в программу",
-    "в отчет",
-    "в отчёт",
-    "выгружать",
-    "заливать",
-    "загружать",
-    "сводка",
-    "отчёт",
-    "отчет",
-    "статистика",
-    "кто будет",
-    "кто сегодня",
-    "проверьте",
-    "проверяйте",
-    "исправьте",
-    "добавьте",
-    "внесите",
-    "не забывайте",
-    "возобновляем",
-    "активнее",
-    "корректно",
-    "фиксируйте",
-    "завтра",
-    "сегодня нужно",
-    "потом",
-    "позже",
-    "до вечера",
-    "до конца дня",
-    "скиньте",
-    "пришлите",
-    "отправьте",
-    "мне это",
-    "мне надо",
-    "мне нужно",
-    "на коленях",
-]
+def parse_raw_text(
+    raw_text: str, cafe_name: str
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    global CURRENT_CAFE
+    CURRENT_CAFE = cafe_name
 
-SHORT_REPLIES = {
-    "ок",
-    "окей",
-    "ага",
-    "угу",
-    "ясно",
-    "принято",
-    "понял",
-    "поняла",
-    "хорошо",
-    "добро",
-    "+",
-    "++",
-    "+++",
-    "-",
-    "--",
-    "---",
-    "!",
-    "!!",
-    "!!!",
-    "спс",
-    "спасибо",
-    "ок, спасибо",
-}
+    raw_text = normalize_spaces(raw_text)
+    message_blocks = split_messages(raw_text)
 
-MONTH_MAP = {
-    "янв": "01",
-    "янв.": "01",
-    "фев": "02",
-    "февр": "02",
-    "февр.": "02",
-    "мар": "03",
-    "мар.": "03",
-    "апр": "04",
-    "апр.": "04",
-    "мая": "05",
-    "май": "05",
-    "июн": "06",
-    "июн.": "06",
-    "июл": "07",
-    "июл.": "07",
-    "авг": "08",
-    "авг.": "08",
-    "сен": "09",
-    "сен.": "09",
-    "сент": "09",
-    "сент.": "09",
-    "окт": "10",
-    "окт.": "10",
-    "ноя": "11",
-    "нояб": "11",
-    "нояб.": "11",
-    "дек": "12",
-    "дек.": "12",
-}
+    review_rows = []
+    dish_rows = []
+
+    for block in message_blocks:
+        parsed = parse_message_block(block)
+        if not parsed:
+            continue
+
+        author = parsed["author"]
+        body = parsed["body"]
+
+        if author == "GastroReview":
+            extra_review_rows, extra_dish_rows = parse_aggregator_body(body)
+        else:
+            extra_review_rows, extra_dish_rows = parse_chat_body(body)
+
+        for row in extra_review_rows:
+            if not row["date"]:
+                row["date"] = parsed["review_date"]
+            review_rows.append(row)
+
+        for drow in extra_dish_rows:
+            if not drow["date"]:
+                drow["date"] = parsed["review_date"]
+            dish_rows.append(drow)
+
+    return review_rows, dish_rows
+
+
+def save_parsed_to_csv(
+    review_rows: List[Dict[str, object]],
+    dish_rows: List[Dict[str, object]],
+    output_dir: Path | None = None,
+) -> None:
+    if output_dir is None:
+        output_dir = OUTPUT_DIR
+
+    output_dir.mkdir(exist_ok=True)
+
+    review_fieldnames = [
+        "date",
+        "source",
+        "cafe",
+        "table",
+        "dish",
+        "problem",
+        "review_text",
+        "tonality",
+        "type",
+        "priority",
+        "what_done",
+        "tags",
+        "review_tag",
+        "is_noise",
+    ]
+
+    dish_fieldnames = [
+        "date",
+        "source",
+        "cafe",
+        "table",
+        "dish",
+        "dish_tag",
+        "review_text",
+        "mention_tonality",
+        "priority",
+        "problem",
+        "is_noise",
+    ]
+
+    output_csv = output_dir / "parsed_reviews.csv"
+    output_dishes_csv = output_dir / "parsed_dishes.csv"
+
+    with open(output_csv, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=review_fieldnames)
+        writer.writeheader()
+        writer.writerows(review_rows)
+
+    with open(output_dishes_csv, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=dish_fieldnames)
+        writer.writeheader()
+        writer.writerows(dish_rows)
 
 
 def normalize_telegram_date(date_str: str) -> str:
@@ -568,11 +155,11 @@ def normalize_telegram_date(date_str: str) -> str:
 
     day, month_raw, year = match.groups()
     month_key = month_raw.lower().strip()
-    month_num = MONTH_MAP.get(month_key)
+    month_num = config.month_map.get(month_key)
 
     if not month_num:
         month_key = month_key.rstrip(".")
-        month_num = MONTH_MAP.get(month_key)
+        month_num = config.month_map.get(month_key)
 
     if not month_num:
         return normalize_spaces(date_str).strip()
@@ -588,17 +175,6 @@ def normalize_spaces(text: str) -> str:
     return text.strip()
 
 
-TYPO_MAP = {
-    "бифстрогонов": "бифстроганов",
-    "бистроганов": "бифстроганов",
-    "маракуйа": "маракуйя",
-    "фетучини": "феттучини",
-    "баскит": "баскский",
-    "овчека": "овечка",
-    "запечони": "запеченные",
-}
-
-
 def normalize_text_for_search(text: str) -> str:
     text = normalize_spaces(text).lower()
     text = text.replace("ё", "е")
@@ -608,7 +184,7 @@ def normalize_text_for_search(text: str) -> str:
     text = text.replace("-", " ")
     text = re.sub(r"\s+", " ", text).strip()
 
-    for bad, good in TYPO_MAP.items():
+    for bad, good in config.typo_map.items():
         text = text.replace(bad, good)
 
     return text
@@ -903,7 +479,7 @@ def extract_what_done(text: str) -> str:
 
 
 def has_negative_exception(text: str) -> bool:
-    return any(phrase_in_text(text, marker) for marker in NEGATIVE_EXCEPTIONS)
+    return any(phrase_in_text(text, marker) for marker in config.negative_exceptions)
 
 
 def count_markers(text: str, markers: List[str]) -> int:
@@ -954,15 +530,15 @@ def classify_tonality_by_text(text: str) -> str:
     if has_negative_exception(text_lower):
         return "Позитив"
 
-    # 1) ТВОИ базовые маркеры (сохраняем)
-    pos_score = count_markers(text_lower, POSITIVE_MARKERS)
-    neg_score = count_markers(text_lower, NEGATIVE_MARKERS)
-    has_mixed = any(phrase_in_text(text_lower, marker) for marker in MIXED_MARKERS)
+    pos_score = count_markers(text_lower, config.positive_markers)
+    neg_score = count_markers(text_lower, config.negative_markers)
+    has_mixed = any(
+        phrase_in_text(text_lower, marker) for marker in config.mixed_markers
+    )
     has_recovery = any(
-        phrase_in_text(text_lower, marker) for marker in SERVICE_RECOVERY_MARKERS
+        phrase_in_text(text_lower, marker) for marker in config.service_recovery_markers
     )
 
-    # 2) ДОБАВЛЯЕМ стемы (не заменяем)
     pos_score += _count_regex_hits(text_lower, POSITIVE_STEMS)
     neg_score += _count_regex_hits(text_lower, NEGATIVE_STEMS)
     neg_score += _count_regex_hits(text_lower, NEGATED_POSITIVE_PATTERNS)
@@ -1822,7 +1398,7 @@ def detect_noise(text: str) -> bool:
 
     if not text_lower:
         return True
-    if text_lower in SHORT_REPLIES:
+    if text_lower in config.short_replies:
         return True
     if not re.search(r"[а-яa-z0-9]", text_lower, re.IGNORECASE):
         return True
@@ -1902,14 +1478,14 @@ def detect_noise(text: str) -> bool:
     # ВАЖНО: по словам считаем с границами, не через "in"
     review_score += sum(
         1
-        for w in REVIEW_KEYWORDS
+        for w in config.review_keywords
         if re.search(
             rf"(?<![а-яa-z0-9]){re.escape(w)}(?![а-яa-z0-9])", text_lower, re.IGNORECASE
         )
     )
     noise_score += sum(
         1
-        for w in NOISE_KEYWORDS
+        for w in config.noise_keywords
         if re.search(
             rf"(?<![а-яa-z0-9]){re.escape(w)}(?![а-яa-z0-9])", text_lower, re.IGNORECASE
         )
@@ -2084,8 +1660,6 @@ def parse_chat_body(
         table_number = extract_table_number(subreview)
         review_text = clean_review_text(subreview)
 
-        # ЖЕСТКИЙ ГЕЙТ:
-        # Нет номера стола -> сразу шум (без попыток классификации)
         if not has_table_anchor_only(table_number):
             is_noise = True
             tonality = ""
@@ -2096,14 +1670,15 @@ def parse_chat_body(
             review_type, priority = "", ""
         else:
             is_noise = detect_noise(review_text)
-
-            tonality = "" if is_noise else ensure_tonality(review_text)
-            problem = "" if is_noise else extract_problem(review_text)
-            what_done = "" if is_noise else extract_what_done(review_text)
             detected_dishes = [] if is_noise else detect_dishes(review_text)
             review_tag = (
                 "" if is_noise else detect_review_tag(review_text, detected_dishes)
             )
+
+            # Общая тональность отзыва (для главной строки)
+            tonality = "" if is_noise else ensure_tonality(review_text)
+            problem = "" if is_noise else extract_problem(review_text)
+            what_done = "" if is_noise else extract_what_done(review_text)
             review_type, priority = (
                 ("", "")
                 if is_noise
@@ -2135,7 +1710,14 @@ def parse_chat_body(
         }
 
         review_rows.append(row)
-        dish_rows.extend(build_dish_rows(row, detected_dishes))
+
+        if not is_noise and detected_dishes:
+            dish_rows.extend(build_dish_rows(row, detected_dishes))
+        elif not is_noise:
+
+            dish_rows.extend(
+                build_dish_rows(row, [{"dish": "", "dish_tag": review_tag}])
+            )
 
     return review_rows, dish_rows
 
@@ -2156,82 +1738,12 @@ def parse_chat_body(
 
 
 def main():
-    # _self_test_noise()
-    # print("RUN FILE:", __file__)
-
     try:
         with open(INPUT_FILE, "r", encoding="utf-8") as f:
             raw_text = f.read()
 
-        message_blocks = split_messages(raw_text)
-        review_rows = []
-        dish_rows = []
-
-        for block in message_blocks:
-            parsed = parse_message_block(block)
-            if not parsed:
-                continue
-
-            author = parsed["author"]
-            body = parsed["body"]
-
-            if author == "GastroReview":
-                extra_review_rows, extra_dish_rows = parse_aggregator_body(body)
-            else:
-                extra_review_rows, extra_dish_rows = parse_chat_body(body)
-
-            for row in extra_review_rows:
-                if not row["date"]:
-                    row["date"] = parsed["review_date"]
-                review_rows.append(row)
-
-            for drow in extra_dish_rows:
-                if not drow["date"]:
-                    drow["date"] = parsed["review_date"]
-                dish_rows.append(drow)
-
-        review_fieldnames = [
-            "date",
-            "source",
-            "cafe",
-            "table",
-            "dish",
-            "problem",
-            "review_text",
-            "tonality",
-            "type",
-            "priority",
-            "what_done",
-            "tags",
-            "review_tag",
-            "is_noise",
-        ]
-
-        dish_fieldnames = [
-            "date",
-            "source",
-            "cafe",
-            "table",
-            "dish",
-            "dish_tag",
-            "review_text",
-            "mention_tonality",
-            "priority",
-            "problem",
-            "is_noise",
-        ]
-
-        OUTPUT_DIR.mkdir(exist_ok=True)
-
-        with open(OUTPUT_CSV, "w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=review_fieldnames)
-            writer.writeheader()
-            writer.writerows(review_rows)
-
-        with open(OUTPUT_DISHES_CSV, "w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=dish_fieldnames)
-            writer.writeheader()
-            writer.writerows(dish_rows)
+        review_rows, dish_rows = parse_raw_text(raw_text, CURRENT_CAFE)
+        save_parsed_to_csv(review_rows, dish_rows, OUTPUT_DIR)
 
         total_rows = len(review_rows)
         noise_rows = sum(1 for row in review_rows if row["is_noise"] is True)
@@ -2249,7 +1761,3 @@ def main():
     except Exception as e:
         print(f"Ошибка парсинга: {e}")
         return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

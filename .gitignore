@@ -3,6 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.python-version
+
+# .env
+.env
+token.env
+
 
 # Virtual environment
 venv/
@@ -40,7 +46,7 @@ raw_reviews.txt
 input/raw_reviews.txt
 
 # Generated templates 
-ШАБЛОН_НЕ_ТРОГАТЬ/
+
 
 #debug_files
 manual.txt
@@ -54,3 +60,5 @@ scripts/parse_reviews_debug.py
 v0.9_Таблица_обратная_связь
 v0.9_Таблица_обратная_связь.zip
 raw_data_mass
+scripts/parse_reviews_old_ver.py
+jobs/
