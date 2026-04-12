@@ -38,15 +38,6 @@ def get_base_dir():
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR = get_base_dir()
-INPUT_FILE = BASE_DIR / "ПОЛОЖИТЬ_СЮДА_ФАЙЛ_С_ОТЗЫВАМИ" / "raw_reviews.txt"
-OUTPUT_DIR = BASE_DIR / "ГОТОВЫЙ_РЕЗУЛЬТАТ"
-OUTPUT_CSV = OUTPUT_DIR / "parsed_reviews.csv"
-OUTPUT_DISHES_CSV = OUTPUT_DIR / "parsed_dishes.csv"
-
-CURRENT_CAFE = "АндерСон Таганская 36"
-
-
 def parse_raw_text(
     raw_text: str, cafe_name: str
 ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
@@ -58,10 +49,25 @@ def parse_raw_text(
     review_rows = []
     dish_rows = []
 
-    message_blocks = split_messages(raw_text)
+    primary_blocks = split_messages(raw_text)
 
-    # Если telegram-заголовки не найдены, но текст похож на plain table dump
-    if len(message_blocks) == 1 and looks_like_plain_table_dump(raw_text):
+    # fallback: если telegram split не помог, режем по pseudo-header
+    # и по строкам старта отзывов типа "105, ..." / "Стол 105, ..."
+    if len(primary_blocks) <= 1:
+        fallback_blocks = split_fallback_review_blocks(raw_text)
+        if len(fallback_blocks) > 1:
+            message_blocks = fallback_blocks
+        else:
+            message_blocks = primary_blocks
+    else:
+        message_blocks = primary_blocks
+
+    # если всё ещё один блок, но внутри есть поток отзывов по столам,
+    # пробуем сразу parse_chat_body
+    if len(message_blocks) == 1 and (
+        looks_like_plain_table_dump(raw_text)
+        or looks_like_table_review_stream(raw_text)
+    ):
         extra_review_rows, extra_dish_rows = parse_chat_body(raw_text)
         review_rows.extend(extra_review_rows)
         dish_rows.extend(extra_dish_rows)
@@ -90,8 +96,9 @@ def parse_raw_text(
                 dish_rows.append(drow)
 
         else:
-            # fallback: блок без telegram-header, но похож на table-dump
-            if looks_like_plain_table_dump(block):
+            if looks_like_plain_table_dump(block) or looks_like_table_review_stream(
+                block
+            ):
                 extra_review_rows, extra_dish_rows = parse_chat_body(block)
                 review_rows.extend(extra_review_rows)
                 dish_rows.extend(extra_dish_rows)
@@ -183,9 +190,9 @@ def normalize_telegram_date(date_str: str) -> str:
 
 def normalize_spaces(text: str) -> str:
     text = text.replace("\xa0", " ")
-    text = text.replace("\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
@@ -234,26 +241,113 @@ def looks_like_plain_table_dump(text: str) -> bool:
     if not lines:
         return False
 
-    table_header_count = 0
+    table_like_count = 0
 
     patterns = [
-        r"^\s*Стол\s*\d{1,4}\s*:?\s*$",
-        r"^\s*\d{1,4}\s*стол\s*:?\s*$",
-        r"^\s*\d{1,4}\s*:?\s*$",
+        r"^\s*Стол\s*\d{1,4}\s*[:.,]?\s*$",
+        r"^\s*\d{1,4}\s*стол\s*[:.,]?\s*$",
+        r"^\s*\d{1,4}\s*[:.,]?\s*$",
+        r"^\s*Стол\s*\d{1,4}\s*[:.,]?\s*.+$",
+        r"^\s*\d{1,4}\s*стол\s*[:.,]?\s*.+$",
+        r"^\s*\d{1,4}\s*[:.,]\s*.+$",
+        r"^\s*\d{1,4}\s+.+$",
     ]
 
     for line in lines:
         if any(re.match(p, line, re.IGNORECASE) for p in patterns):
-            table_header_count += 1
+            table_like_count += 1
 
-    return table_header_count >= 2
+    return table_like_count >= 2
+
+
+# Если долго смотреть в бездну входных форматов, бездна начнёт смотреть на тебя
+
+
+def is_review_start_line(line: str) -> bool:
+    if not line or not line.strip():
+        return False
+
+    stripped = line.strip()
+
+    patterns = [
+        r"^\s*Стол\s*\d{1,4}\s*[:.,]?\s*.*$",
+        r"^\s*\d{1,4}\s*стол\s*[:.,]?\s*.*$",
+        r"^\s*\d{1,4}\s*[:.,]\s*.*$",
+        r"^\s*\d{1,4}\s+.+$",
+    ]
+
+    return any(re.match(p, stripped, re.IGNORECASE) for p in patterns)
+
+
+def is_pseudo_chat_header(line: str) -> bool:
+    if not line or not line.strip():
+        return False
+
+    stripped = line.strip()
+
+    # > Massimo:
+    # > Ms.Anastesha🩶:
+    return bool(re.match(r"^>\s*[^:\n]{1,80}:\s*$", stripped))
+
+
+def looks_like_table_review_stream(text: str) -> bool:
+    if not text or not text.strip():
+        return False
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False
+
+    review_start_count = sum(1 for line in lines if is_review_start_line(line))
+    pseudo_header_count = sum(1 for line in lines if is_pseudo_chat_header(line))
+
+    return review_start_count >= 2 or (
+        pseudo_header_count >= 1 and review_start_count >= 1
+    )
+
+
+def split_fallback_review_blocks(text: str) -> List[str]:
+    if not text or not text.strip():
+        return []
+
+    lines = text.splitlines()
+    blocks = []
+    current_block = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped:
+            if current_block:
+                current_block.append(line)
+            continue
+
+        if is_pseudo_chat_header(stripped) or is_review_start_line(stripped):
+            if current_block:
+                block = "\n".join(current_block).strip()
+                if block:
+                    blocks.append(block)
+            current_block = [line]
+        else:
+            if current_block:
+                current_block.append(line)
+            else:
+                current_block = [line]
+
+    if current_block:
+        block = "\n".join(current_block).strip()
+        if block:
+            blocks.append(block)
+
+    return blocks
 
 
 def split_messages(text: str) -> List[str]:
-
-    # Поддерживает 2 формата заголовка:
+    # Поддерживает форматы заголовка:
     # 1) [04.04.2026 12:30] Имя:
     # 2) Alex, [4 апр. 2026 в 15:39]
+    # 3) Alex, [04.04.2026 15:39]
+    # 4) > Alex:
 
     if not text or not text.strip():
         return []
@@ -269,6 +363,9 @@ def split_messages(text: str) -> List[str]:
     new_header_pattern_numeric = re.compile(
         r"^.+?, \[\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}\]\s*$"
     )
+
+    pseudo_header_pattern = re.compile(r"^>\s*[^:\n]{1,80}:\s*$")
+
     blocks = []
     current_block = []
 
@@ -278,6 +375,7 @@ def split_messages(text: str) -> List[str]:
             old_header_pattern.match(stripped)
             or new_header_pattern_text_month.match(stripped)
             or new_header_pattern_numeric.match(stripped)
+            or pseudo_header_pattern.match(stripped)
         )
 
     for line in lines:
@@ -327,8 +425,7 @@ def parse_message_block(block: str) -> Optional[Dict[str, str]]:
 
     # Формат 2:
     # Alex, [4 апр. 2026 в 15:39]
-    # 223
-    # Мамин завтрак понравился
+    # текст
     new_header_pattern = re.compile(
         r"^(.+?), \[(\d{1,2} [А-Яа-яЁё.]+ \d{4}) в (\d{2}:\d{2})\]\s*(.*)$",
         re.DOTALL,
@@ -336,8 +433,8 @@ def parse_message_block(block: str) -> Optional[Dict[str, str]]:
     new_match = new_header_pattern.match(block)
     if new_match:
         author = new_match.group(1).strip()
-        raw_date = new_match.group(2).strip()  # 4 апр. 2026
-        time_part = new_match.group(3).strip()  # 15:39
+        raw_date = new_match.group(2).strip()
+        time_part = new_match.group(3).strip()
         body = new_match.group(4).strip()
 
         review_date = normalize_telegram_date(raw_date)
@@ -350,6 +447,10 @@ def parse_message_block(block: str) -> Optional[Dict[str, str]]:
             "body": body,
             "raw_block": block,
         }
+
+    # Формат 3:
+    # Alex, [04.04.2026 15:39]
+    # текст
     numeric_header_pattern = re.compile(
         r"^(.+?), \[(\d{2}\.\d{2}\.\d{4}) (\d{2}:\d{2})\]\s*(.*)$",
         re.DOTALL,
@@ -370,6 +471,27 @@ def parse_message_block(block: str) -> Optional[Dict[str, str]]:
             "body": body,
             "raw_block": block,
         }
+
+    # Формат 4:
+    # > Massimo:
+    # текст
+    pseudo_header_pattern = re.compile(
+        r"^>\s*([^:\n]{1,80}):\s*(.*)$",
+        re.DOTALL,
+    )
+    pseudo_match = pseudo_header_pattern.match(block)
+    if pseudo_match:
+        author = pseudo_match.group(1).strip()
+        body = pseudo_match.group(2).strip()
+
+        return {
+            "message_datetime": "",
+            "review_date": "",
+            "author": author,
+            "body": body,
+            "raw_block": block,
+        }
+    # хватит, я умоляю
     return None
 
 
@@ -383,10 +505,12 @@ def split_chat_into_subreviews(body: str) -> List[str]:
     blocks = []
     current_block = []
 
-    table_only_pattern = re.compile(r"^\s*\d{2,4}\s*:?\s*$")
-    table_with_text_pattern = re.compile(r"^\s*\d{2,4}\b")
-    explicit_table_pattern = re.compile(
-        r"^\s*(?:Стол\s*\d{1,4}\b|\d{1,4}\s*стол\b|\d{1,4}\s*,|\d{1,4}\s*:)",
+    review_start_pattern = re.compile(
+        r"^\s*(?:"
+        r"Стол\s*\d{1,4}\s*[:.,]?\s*.*|"
+        r"\d{1,4}\s*стол\s*[:.,]?\s*.*|"
+        r"\d{1,4}\s*(?:[:.,]\s*.*|\s+.+)?"
+        r")$",
         re.IGNORECASE,
     )
 
@@ -394,12 +518,7 @@ def split_chat_into_subreviews(body: str) -> List[str]:
         stripped = line.strip()
         if not stripped:
             return False
-
-        return bool(
-            table_only_pattern.match(stripped)
-            or explicit_table_pattern.match(stripped)
-            or table_with_text_pattern.match(stripped)
-        )
+        return bool(review_start_pattern.match(stripped))
 
     for line in lines:
         if starts_new_subreview(line):
@@ -428,18 +547,23 @@ def extract_table_number(text: str) -> str:
 
     text = text.strip()
 
-    # 1. Первая непустая строка целиком состоит из номера стола
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if lines:
         first_line = lines[0]
-        if re.fullmatch(r"\d{1,4}\s*:?", first_line):
-            return re.sub(r"\D", "", first_line)
 
-        match = re.match(r"^(?:Стол\s*)?(\d{1,4})\b", first_line, re.IGNORECASE)
-        if match:
-            return match.group(1)
+        first_line_patterns = [
+            r"^\s*Стол\s*(\d{1,4})\s*[:.,]?\s*.*$",
+            r"^\s*(\d{1,4})\s*стол\s*[:.,]?\s*.*$",
+            r"^\s*(\d{1,4})\s*[:.,]\s*.*$",
+            r"^\s*(\d{1,4})\s+.+$",
+            r"^\s*(\d{1,4})\s*[:.,]?\s*$",
+        ]
 
-    # 2. Явные форматы "Стол 223" / "223 стол"
+        for pattern in first_line_patterns:
+            match = re.match(pattern, first_line, re.IGNORECASE)
+            if match:
+                return match.group(1)
+
     patterns = [
         r"\bСтол\s*(\d{1,4})\b",
         r"\bстол\s*(\d{1,4})\b",
@@ -740,7 +864,8 @@ def classify_tonality_by_text(text: str) -> str:
         "все очень понравилось",
         "всё очень понравилось",
         "ушли с улыбками",
-        "ушли с улыбкой" "не пожалели",
+        "ушли с улыбкой",
+        "не пожалели",
     ]
     if any(phrase_in_text(text_lower, p) for p in fallback_positive_patterns):
         return "Позитив"
