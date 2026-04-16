@@ -56,8 +56,19 @@ def parse_raw_text(
         try:
             from scripts.ai_normalizer import normalize_with_ai
 
-            raw_text = normalize_with_ai(raw_text)
-            print("=== AI NORMALIZER применил предобработку входных данных ===")
+            print(
+                "=== AI NORMALIZER: отправляем текст длиной",
+                len(raw_text),
+                "символов ===",
+            )
+            normalized = normalize_with_ai(raw_text)
+            print("=== AI NORMALIZER ВЫДАЛ (начало 400 символов): ===")
+            print(
+                repr(normalized[:400] + "..." if len(normalized) > 400 else normalized)
+            )
+            print("=== AI NORMALIZER ВЫДАЛ (конец) ===")
+            raw_text = normalized
+            print("=== AI NORMALIZER применил предобработку ===")
         except Exception as e:
             print(f"=== AI NORMALIZER ERROR: {type(e).__name__}: {e} ===")
             import traceback
