@@ -38,7 +38,7 @@ if not TOKEN:
 MAIN_MENU = ReplyKeyboardMarkup(
     [
         [KeyboardButton("📋 Инструкция"), KeyboardButton("📊 Статус")],
-        [KeyboardButton("🏪 Сменить кафе")],
+        [KeyboardButton("🏪 Сменить кафе"), KeyboardButton("🧠 ИИ-чистка")],
     ],
     resize_keyboard=True,
     one_time_keyboard=False,
@@ -98,6 +98,25 @@ async def show_cafe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏪 Выберите кафе:",
         reply_markup=build_cafe_menu(),
+    )
+
+
+async def toggle_ai_normalizer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    config = get_config()
+    current = getattr(config, "ai_normalizer_enabled", True)
+
+    new_state = not current
+
+    if hasattr(config, "_config_instance") and config._config_instance:
+        object.__setattr__(config._config_instance, "ai_normalizer_enabled", new_state)
+
+    status = "✅ ВКЛЮЧЕНА" if new_state else "❌ ВЫКЛЮЧЕНА"
+
+    await update.message.reply_text(
+        f"🧠 ИИ-чистка отзывов: {status}\n\n"
+        f"Сейчас нейросеть {'будет' if new_state else 'не будет'} "
+        f"автоматически приводить кривые отзывы к нормальному виду перед парсингом и созданием таблицы.",
+        reply_markup=MAIN_MENU,
     )
 
 
@@ -231,6 +250,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "❌ Неизвестное кафе.",
                 reply_markup=MAIN_MENU,
             )
+        return
+
+    if text == "🧠 ИИ-чистка":
+        await toggle_ai_normalizer(update, context)
         return
 
     await process_reviews_request(

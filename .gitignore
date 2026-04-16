@@ -62,3 +62,4 @@ v0.9_Таблица_обратная_связь.zip
 raw_data_mass
 scripts/parse_reviews_old_ver.py
 jobs/
+debugger.py

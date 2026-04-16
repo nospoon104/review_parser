@@ -32,6 +32,8 @@ class AppConfig:
     max_text_length: int
     max_file_size_bytes: int
 
+    ai_normalizer_enabled: bool
+
     @classmethod
     def create(cls) -> "AppConfig":
         base_dir = Path(__file__).resolve().parent.parent
@@ -588,6 +590,7 @@ class AppConfig:
             },
             max_text_length=120_000,
             max_file_size_bytes=2 * 1024 * 1024,
+            ai_normalizer_enabled=True,
         )
 
 
