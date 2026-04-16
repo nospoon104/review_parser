@@ -59,7 +59,7 @@ def parse_raw_text(
             raw_text = normalize_with_ai(raw_text)
             print("=== AI NORMALIZER применил предобработку входных данных ===")
         except Exception as e:
-            print(f"=== AI NORMALIZER ERROR: {e} ===")
+            print(f"=== AI NORMALIZER ERROR: {type(e).__name__}: {e} ===")
             import traceback
 
             traceback.print_exc()
