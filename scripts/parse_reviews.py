@@ -52,12 +52,17 @@ def parse_raw_text(
 
     raw_text = normalize_spaces(raw_text)
 
-    # === AIшка, от их непредсказуемых вводов===
     if getattr(config, "ai_normalizer_enabled", True):
-        from .ai_normalizer import normalize_with_ai
+        try:
+            from scripts.ai_normalizer import normalize_with_ai
 
-        raw_text = normalize_with_ai(raw_text)
-        print("=== AI NORMALIZER применил предобработку входных данных ===")
+            raw_text = normalize_with_ai(raw_text)
+            print("=== AI NORMALIZER применил предобработку входных данных ===")
+        except Exception as e:
+            print(f"=== AI NORMALIZER ERROR: {e} ===")
+            import traceback
+
+            traceback.print_exc()
 
     review_rows = []
     dish_rows = []
