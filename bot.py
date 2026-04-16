@@ -30,6 +30,8 @@ processing_lock = asyncio.Lock()
 
 load_dotenv()
 
+from core.config import get_config, _config_instance
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("Не задана переменная окружения TELEGRAM_BOT_TOKEN")
@@ -82,12 +84,18 @@ async def show_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cfg = get_config()
+    ai_status = (
+        "✅ ВКЛЮЧЕНА" if getattr(cfg, "ai_normalizer_enabled", True) else "❌ ВЫКЛЮЧЕНА"
+    )
+
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
     jobs_dir = config.jobs_dir
 
     text = (
         f"📊 Текущий статус\n\n"
         f"Активное кафе: {processor.current_cafe}\n"
+        f"ИИ-чистка отзывов: {ai_status}\n"
         f"Папка результатов по умолчанию:\n{config.output_dir}\n\n"
         f"Папка задач:\n{jobs_dir}"
     )
@@ -102,22 +110,28 @@ async def show_cafe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def toggle_ai_normalizer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    config = get_config()
-    current = getattr(config, "ai_normalizer_enabled", True)
+    cfg = get_config()
 
+    current = getattr(cfg, "ai_normalizer_enabled", True)
     new_state = not current
 
-    if hasattr(config, "_config_instance") and config._config_instance:
-        object.__setattr__(config._config_instance, "ai_normalizer_enabled", new_state)
+    if _config_instance is not None:
+        object.__setattr__(_config_instance, "ai_normalizer_enabled", new_state)
+    else:
+        object.__setattr__(cfg, "ai_normalizer_enabled", new_state)
 
     status = "✅ ВКЛЮЧЕНА" if new_state else "❌ ВЫКЛЮЧЕНА"
+    emoji = "🟢" if new_state else "🔴"
 
     await update.message.reply_text(
-        f"🧠 ИИ-чистка отзывов: {status}\n\n"
-        f"Сейчас нейросеть {'будет' if new_state else 'не будет'} "
-        f"автоматически приводить кривые отзывы к нормальному виду перед парсингом и созданием таблицы.",
+        f"{emoji} ИИ-чистка отзывов: {status}\n\n"
+        f"Нейросеть {'будет автоматически чистить и структурировать' if new_state else 'не будет трогать'} "
+        f"входные данные перед парсером.\n\n"
+        f"Можно отправлять даже очень кривые отзывы — ИИ приведёт их к удобному формату.",
         reply_markup=MAIN_MENU,
     )
+
+    print(f"=== ИИ-чистка переключена в состояние: {new_state} ===")
 
 
 async def process_reviews_request(
